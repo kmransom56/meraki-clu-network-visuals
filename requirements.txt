@@ -1,0 +1,17 @@
+# Required dependencies to run Cisco Meraki CLU
+tabulate
+pathlib
+datetime
+termcolor
+requests
+rich
+setuptools
+cryptography
+dnspython
+ipinfo
+scapy
+numpy
+ipaddress
+flask>=2.0.1
+certifi>=2023.11.17
+pyOpenSSL>=23.3.0
