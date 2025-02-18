@@ -60,7 +60,7 @@ if missing_packages:
     print("Missing required Python packages: " + ", ".join(missing_packages))
     print("Please install them using the following command:")
     print(f"{sys.executable} -m pip install " + " ".join(missing_packages))
-    sys.exit(1)
+
 
 from getpass import getpass
 from datetime import datetime
@@ -92,7 +92,7 @@ file_handler.setLevel(logging.ERROR)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
-   
+
 
 # ==================================================
 # VISUALIZE the Main Menu
@@ -117,7 +117,7 @@ def main_menu(fernet):
         ]
         current_year = datetime.now().year
         footer = f"\033[1mPROJECT PAGE\033[0m\n{current_year} Matia Zanella\nhttps://developer.cisco.com/codeexchange/github/repo/akamura/cisco-meraki-clu/\n\n\033[1mSUPPORT ME\033[0m\n Fuel me with a coffee if you found it useful https://www.paypal.com/paypalme/matiazanella/\n\n\033[1mDISCLAIMER\033[0m\nThis utility is not an official Cisco Meraki product but is based on the official Cisco Meraki API.\nIt is intended to provide Network Administrators with an easy daily companion in the swiss army knife."
-        
+
         # Description header over the menu
         print("\n")
         print("┌" + "─" * 58 + "┐")
@@ -129,7 +129,7 @@ def main_menu(fernet):
 
         term_extra.print_footer(footer)
         choice = input(colored("Choose a menu option [1-9]: ", "cyan"))
-        
+
         # In the main_menu function, update the choice == '1' block:
         if choice == '1':
             if api_key:
@@ -191,7 +191,7 @@ def manage_ipinfo_token(fernet):
         change = input("Do you want to change it? [yes/no]: ").lower()
         if change != 'yes':
             return
-    
+
     new_token = input("\nEnter the new IPinfo access token: ")
     if new_token:
         db_creator.store_tools_ipinfo_access_token(new_token, fernet)
@@ -215,17 +215,17 @@ def initialize_api_key():
         # Store the key securely if provided via command line
         if meraki_api_manager.save_api_key(args.set_key, fernet):
             return args.set_key
-    
+
     # Try to get key from environment variable
     api_key = os.environ.get('MERAKI_DASHBOARD_API_KEY')
     if api_key:
         return api_key
-        
+
     # Try to load stored key
     api_key = meraki_api_manager.get_api_key(fernet)
     if api_key:
         return api_key
-    
+
     # If no key is found, show instructions
     print("\nNo API key found. Please set your Meraki API key using one of these methods:")
     print("\n1. Run the program with the --set-key option:")
@@ -267,7 +267,7 @@ def main():
 
         # At this point, the database exists, so update the schema as needed.
         db_creator.update_database_schema(db_path, db_password)  # Ensure the schema is updated for existing databases too.
-        
+
         main_menu(fernet)
 
     except Exception as e:

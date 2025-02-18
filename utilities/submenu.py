@@ -53,7 +53,30 @@ from modules.tools.utilities import tools_subnetcalc
 
 from settings import term_extra
 
+import logging
 
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+print("└" + "─" * 58 + "┘")
+
+choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
+
+if choice == '1':
+    selected_org = select_organization(api_key)
+    if selected_org:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
+        
+        # Log the selected organization ID
+        logging.debug(f"Selected organization ID: {selected_org['id']}")
+        print("└" + "─" * 58 + "┘")
+        try:
+            meraki_mx.select_mx_network(api_key, selected_org['id'])
+        except Exception as e:
+            # Log the error
+            logging.error(f"Error selecting MX network: {e}")
 # ==================================================
 # VISUALIZE submenus for Appliance, Switches and APs
 # ==================================================
@@ -84,9 +107,18 @@ def submenu_sw_and_ap(api_key):
                 term_extra.clear_screen()
                 term_extra.print_ascii_art()
                 print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
-                select_network(api_key, selected_org['id'])
+        
+                # Log the selected organization ID
+                logging.debug(f"Selected organization ID: {selected_org['id']}")
+        
+                try:
+                    meraki_mx.select_mx_network(api_key, selected_org['id'])
+                except Exception as e:
+                    # Log the error
+                    logging.error(f"Error selecting MX network: {e}")
         elif choice == '2':
             break
+
 
 def submenu_mx(api_key):
     while True:
