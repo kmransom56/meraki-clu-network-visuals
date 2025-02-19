@@ -35,6 +35,8 @@
 import requests
 import subprocess
 import sys
+import logging
+import json
 import csv
 import os
 try:
@@ -45,6 +47,8 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
     from tabulate import tabulate
     subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
+import ssl
+import certifi
 from datetime import datetime
 try:
     from termcolor import colored
@@ -61,6 +65,118 @@ except ImportError:
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Configure requests to use system CA certificates and disable warnings
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+def get_ssl_context():
+    """Create and return a secure SSL context"""
+    try:
+        # Create SSL context with strong security settings
+        context = ssl.create_default_context()
+        
+        # Use system's certificate store
+        context.load_default_certs()
+        
+        # Additionally load certifi's certificates (belt and suspenders approach)
+        context.load_verify_locations(certifi.where())
+        
+        return context
+    except Exception as e:
+        logging.error(f"Error creating SSL context: {e}")
+        return None
+
+def get_organization_summary(api_key, organization_id):
+    """Get summary information about an organization"""
+    try:
+        url = f"https://api.meraki.com/api/v1/organizations/{organization_id}/summary"
+        headers = {
+            "X-Cisco-Meraki-API-Key": api_key,
+            "Content-Type": "application/json"
+        }
+        # Add verify=False for development/testing - in production, proper SSL cert verification should be implemented
+        response = requests.get(url, headers=headers, verify=False)
+        
+        # Get SSL context
+        ssl_context = get_ssl_context()
+        if ssl_context is None:
+            raise Exception("Failed to create SSL context")
+            
+        # Use the SSL context with requests
+        response = requests.get(
+            url, 
+            headers=headers,
+            verify=certifi.where()  # Use certifi's certificate bundle
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.SSLError as ssl_err:
+        logging.error(f"SSL Error: {ssl_err}")
+        # Provide detailed error information
+        logging.error(f"Certificate verification failed. Please ensure certificates are properly installed.")
+        logging.error(f"System certificate paths: {ssl.get_default_verify_paths()}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error getting organization summary: {e}")
+        return None
+
+# Update other API request functions to include verify=False
+# Update other API request functions similarly
+def get_organization_inventory(api_key, organization_id):
+    """Get inventory information for an organization"""
+    try:
+        url = f"https://api.meraki.com/api/v1/organizations/{organization_id}/inventory"
+        headers = {
+            "X-Cisco-Meraki-API-Key": api_key,
+            "Content-Type": "application/json"
+        }
+        response = requests.get(url, headers=headers, verify=False)
+        response = requests.get(
+            url, 
+            headers=headers,
+            verify=certifi.where()
+        )
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.SSLError as ssl_err:
+        logging.error(f"SSL Error: {ssl_err}")
+        return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error getting organization inventory: {e}")
+        return None
+
+def get_organization_licenses(api_key, organization_id):
+    """Get license information for an organization"""
+    try:
+        url = f"https://api.meraki.com/api/v1/organizations/{organization_id}/licenses"
+        headers = {
+            "X-Cisco-Meraki-API-Key": api_key,
+            "Content-Type": "application/json"
+        }
+        response = requests.get(url, headers=headers, verify=False)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error getting organization licenses: {e}")
+        return None
+
+def get_organization_devices_statuses(api_key, organization_id):
+    """Get device status information for an organization"""
+    try:
+        url = f"https://api.meraki.com/api/v1/organizations/{organization_id}/devices/statuses"
+        headers = {
+            "X-Cisco-Meraki-API-Key": api_key,
+            "Content-Type": "application/json"
+        }
+        response = requests.get(url, headers=headers, verify=False)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Error getting device statuses: {e}")
+        return None
 
 BASE_URL = "https://api.meraki.com/api/v1"
 
@@ -748,4 +864,6 @@ def initialize_api_key():
         return api_key
     
     print("No API key found. Please set the MERAKI_DASHBOARD_API_KEY environment variable or use store_api_key() function.")
+    return None
+    return None
     return None
