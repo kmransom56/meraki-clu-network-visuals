@@ -34,6 +34,45 @@
 # ==================================================
 import os
 import sys
+from termcolor import colored
+import logging
+import traceback
+import argparse
+
+from api import meraki_api_manager
+from settings import db_creator
+from utilities import submenu
+from settings import term_extra
+
+required_packages = {
+    "tabulate": "tabulate",
+    "pathlib": "pathlib",
+    "datetime": "datetime",
+    "termcolor": "termcolor",
+    "requests": "requests",
+    "rich": "rich",
+    "setuptools": "setuptools",
+    "cryptography": "cryptography"
+}
+
+missing_packages = []
+for module, package in required_packages.items():
+    try:
+        __import__(module)
+    except ImportError:
+        missing_packages.append(package)
+
+if missing_packages:
+    print("Missing required Python packages: " + ", ".join(missing_packages))
+    print("Please install them using the following command:")
+    print(f"{sys.executable} -m pip install " + " ".join(missing_packages))
+
+
+# ==================================================
+# IMPORT various libraries and modules
+# ==================================================
+import os
+import sys
 import logging
 import traceback
 import argparse
@@ -60,20 +99,10 @@ if missing_packages:
     print("Missing required Python packages: " + ", ".join(missing_packages))
     print("Please install them using the following command:")
     print(f"{sys.executable} -m pip install " + " ".join(missing_packages))
-
-
+    sys.exit(1)
 from getpass import getpass
 from datetime import datetime
-from termcolor import colored 
-
-
-# ==================================================
-# IMPORT custom modules
-# ==================================================
-from api import meraki_api_manager
-from settings import term_extra
-from settings import db_creator
-from utilities import submenu
+from termcolor import colored
 
 
 # ==================================================

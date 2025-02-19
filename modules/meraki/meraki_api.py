@@ -41,6 +41,10 @@ try:
     from tabulate import tabulate
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
+    from tabulate import tabulate
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
+    from tabulate import tabulate
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
 from datetime import datetime
 try:
     from termcolor import colored
@@ -49,7 +53,11 @@ except ImportError:
 
 import json
 from pathlib import Path
-from cryptography.fernet import Fernet
+try:
+    from cryptography.fernet import Fernet
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "cryptography"])
+    from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import base64
