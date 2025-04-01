@@ -27,11 +27,6 @@
 #   Free Software Foundation, Inc.,                                       *
 #   59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.             *
 #**************************************************************************
-
-
-# ==================================================
-# IMPORT various libraries and modules
-# ==================================================
 import requests
 import subprocess
 import sys
@@ -44,9 +39,6 @@ try:
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
     from tabulate import tabulate
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
-    from tabulate import tabulate
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "tabulate"])
 import ssl
 import certifi
 from datetime import datetime
@@ -54,7 +46,6 @@ try:
     from termcolor import colored
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "termcolor"])
-
 import json
 from pathlib import Path
 try:
@@ -72,114 +63,63 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 # Configure requests to use system CA certificates and disable warnings
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-def get_ssl_context():
-    """Create and return a secure SSL context"""
-    try:
-        # Create SSL context with strong security settings
-        context = ssl.create_default_context()
-        
-        # Use system's certificate store
-        context.load_default_certs()
-        
-        # Additionally load certifi's certificates (belt and suspenders approach)
-        context.load_verify_locations(certifi.where())
-        
-        return context
-    except Exception as e:
-        logging.error(f"Error creating SSL context: {e}")
-        return None
+
+# Base URL for Meraki API
+BASE_URL = "https://api.meraki.com/api/v1"
+
+def get_organizations(api_key):
+    """Get a list of organizations accessible by the user"""
+    url = f"{BASE_URL}/organizations"
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+    return make_meraki_request(url, headers)
+
+def get_organization_networks(api_key, org_id):
+    """Get list of networks for an organization"""
+    url = f"{BASE_URL}/organizations/{org_id}/networks"
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+    return make_meraki_request(url, headers)
 
 def get_organization_summary(api_key, organization_id):
     """Get summary information about an organization"""
-    try:
-        url = f"https://api.meraki.com/api/v1/organizations/{organization_id}/summary"
-        headers = {
-            "X-Cisco-Meraki-API-Key": api_key,
-            "Content-Type": "application/json"
-        }
-        # Add verify=False for development/testing - in production, proper SSL cert verification should be implemented
-        response = requests.get(url, headers=headers, verify=False)
-        
-        # Get SSL context
-        ssl_context = get_ssl_context()
-        if ssl_context is None:
-            raise Exception("Failed to create SSL context")
-            
-        # Use the SSL context with requests
-        response = requests.get(
-            url, 
-            headers=headers,
-            verify=certifi.where()  # Use certifi's certificate bundle
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.SSLError as ssl_err:
-        logging.error(f"SSL Error: {ssl_err}")
-        # Provide detailed error information
-        logging.error(f"Certificate verification failed. Please ensure certificates are properly installed.")
-        logging.error(f"System certificate paths: {ssl.get_default_verify_paths()}")
-        return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error getting organization summary: {e}")
-        return None
+    url = f"{BASE_URL}/organizations/{organization_id}/summary"
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+    return make_meraki_request(url, headers)
 
-# Update other API request functions to include verify=False
-# Update other API request functions similarly
 def get_organization_inventory(api_key, organization_id):
     """Get inventory information for an organization"""
-    try:
-        url = f"https://api.meraki.com/api/v1/organizations/{organization_id}/inventory"
-        headers = {
-            "X-Cisco-Meraki-API-Key": api_key,
-            "Content-Type": "application/json"
-        }
-        response = requests.get(url, headers=headers, verify=False)
-        response = requests.get(
-            url, 
-            headers=headers,
-            verify=certifi.where()
-        )
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.SSLError as ssl_err:
-        logging.error(f"SSL Error: {ssl_err}")
-        return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error getting organization inventory: {e}")
-        return None
+    url = f"{BASE_URL}/organizations/{organization_id}/inventory"
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+    return make_meraki_request(url, headers)
 
 def get_organization_licenses(api_key, organization_id):
     """Get license information for an organization"""
-    try:
-        url = f"https://api.meraki.com/api/v1/organizations/{organization_id}/licenses"
-        headers = {
-            "X-Cisco-Meraki-API-Key": api_key,
-            "Content-Type": "application/json"
-        }
-        response = requests.get(url, headers=headers, verify=False)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error getting organization licenses: {e}")
-        return None
+    url = f"{BASE_URL}/organizations/{organization_id}/licenses"
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+    return make_meraki_request(url, headers)
 
 def get_organization_devices_statuses(api_key, organization_id):
     """Get device status information for an organization"""
-    try:
-        url = f"https://api.meraki.com/api/v1/organizations/{organization_id}/devices/statuses"
-        headers = {
-            "X-Cisco-Meraki-API-Key": api_key,
-            "Content-Type": "application/json"
-        }
-        response = requests.get(url, headers=headers, verify=False)
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error getting device statuses: {e}")
-        return None
-
-BASE_URL = "https://api.meraki.com/api/v1"
-
+    url = f"{BASE_URL}/organizations/{organization_id}/devices/statuses"
+    headers = {
+        "X-Cisco-Meraki-API-Key": api_key,
+        "Content-Type": "application/json"
+    }
+    return make_meraki_request(url, headers)
 
 # ==================================================
 # EXPORT device list in a beautiful table format
@@ -213,7 +153,6 @@ def export_devices_to_csv(devices, network_name, device_type, base_folder_path):
     else:
         print("No data to export.")
 
-
 # ==================================================
 # EXPORT firewall rules in a beautiful table format
 # ==================================================
@@ -245,7 +184,6 @@ def export_firewall_rules_to_csv(firewall_rules, network_name, base_folder_path)
         print(f"Data exported to {file_path}")
     else:
         print("No data to export.")
-
 
 # ==================================================
 # GET a list of Organizations
@@ -279,7 +217,6 @@ def select_organization(api_key):
 
     return None
 
-
 # ==================================================
 # GET a list of Networks in an Organization
 # ==================================================
@@ -294,7 +231,6 @@ def get_meraki_networks(api_key, organization_id, per_page=5000):
         "perPage": per_page
     }
     return make_meraki_request(url, headers, params)
-
 
 # ==================================================
 # SELECT a Network in an Organization
@@ -320,7 +256,6 @@ def select_network(api_key, organization_id):
                 print("Invalid selection. Please try again.")
     return None
 
-
 # ==================================================
 # GET a list of Switches in an Network
 # ==================================================
@@ -345,7 +280,6 @@ def display_switches(api_key, network_id):
         return switches
     return None
 
-
 # ==================================================
 # GET a list of Switch Ports and their Status
 # ==================================================
@@ -368,7 +302,6 @@ def get_switch_ports_statuses_with_timespan(api_key, serial, timespan=1800):
     }
     return make_meraki_request(url, headers, params)
 
-
 # ==================================================
 # GET a list of Access Points in an Network
 # ==================================================
@@ -379,7 +312,6 @@ def get_meraki_access_points(api_key, network_id):
         "Content-Type": "application/json"
     }
     return make_meraki_request(url, headers)
-
 
 # =======================================================================
 # [UNDER DEVELOPMENT] GET a list of VLANs and Static Routes in an Network
@@ -429,7 +361,6 @@ def select_mx_network(api_key, organization_id):
                 print("Invalid selection. Please try again.")
     return None
 
-
 # ==================================================
 # GET Layer 3 Firewall Rules for a Network
 # ==================================================
@@ -450,7 +381,6 @@ def display_firewall_rules(firewall_rules):
         print(tabulate(firewall_rules, headers="keys", tablefmt="pretty"))
     else:
         print("No firewall rules found in the selected network.")
-
 
 # ==============================================================
 # FETCH Organization policy and group objects for Firewall Rules
@@ -484,7 +414,6 @@ def get_organization_devices_statuses(api_key, organization_id):
     }
     return make_meraki_request(url, headers)
 
-
 # ==================================================
 # GET Environmental Sensor Data
 # ==================================================
@@ -494,8 +423,7 @@ def get_network_sensor_alerts(api_key, network_id):
         "X-Cisco-Meraki-API-Key": api_key,
         "Content-Type": "application/json"
     }
-    response = requests.get(url, headers=headers)
-    return response.json() if response.ok else None
+    return make_meraki_request(url, headers)
 
 def get_device_sensor_data(api_key, serial):
     url = f"{BASE_URL}/devices/{serial}/sensor/readings/latest"
@@ -503,8 +431,7 @@ def get_device_sensor_data(api_key, serial):
         "X-Cisco-Meraki-API-Key": api_key,
         "Content-Type": "application/json"
     }
-    response = requests.get(url, headers=headers)
-    return response.json() if response.ok else None
+    return make_meraki_request(url, headers)
 
 def get_device_sensor_relationships(api_key, serial):
     url = f"{BASE_URL}/devices/{serial}/sensor/relationships"
@@ -512,8 +439,7 @@ def get_device_sensor_relationships(api_key, serial):
         "X-Cisco-Meraki-API-Key": api_key,
         "Content-Type": "application/json"
     }
-    response = requests.get(url, headers=headers)
-    return response.json() if response.ok else None
+    return make_meraki_request(url, headers)
 
 # ==================================================
 # GET Organization Details
@@ -524,8 +450,7 @@ def get_organization_inventory(api_key, organization_id):
         "X-Cisco-Meraki-API-Key": api_key,
         "Content-Type": "application/json"
     }
-    response = requests.get(url, headers=headers)
-    return response.json() if response.ok else None
+    return make_meraki_request(url, headers)
 
 def get_organization_licenses(api_key, organization_id):
     url = f"{BASE_URL}/organizations/{organization_id}/licenses"
@@ -533,8 +458,7 @@ def get_organization_licenses(api_key, organization_id):
         "X-Cisco-Meraki-API-Key": api_key,
         "Content-Type": "application/json"
     }
-    response = requests.get(url, headers=headers)
-    return response.json() if response.ok else None
+    return make_meraki_request(url, headers)
 
 def get_organization_summary(api_key, organization_id):
     url = f"{BASE_URL}/organizations/{organization_id}/summary"
@@ -542,9 +466,7 @@ def get_organization_summary(api_key, organization_id):
         "X-Cisco-Meraki-API-Key": api_key,
         "Content-Type": "application/json"
     }
-    response = requests.get(url, headers=headers)
-    return response.json() if response.ok else None
-
+    return make_meraki_request(url, headers)
 
 # ==================================================
 # GET Network Health and Performance
@@ -615,12 +537,11 @@ def get_network_topology(api_key, network_id):
     """Get network topology data for visualization"""
     try:
         # Get devices in the network
-        url = f"https://api.meraki.com/api/v1/networks/{network_id}/devices"
+        url = f"{BASE_URL}/networks/{network_id}/devices"
         headers = {
             "X-Cisco-Meraki-API-Key": api_key,
             "Content-Type": "application/json"
         }
-        
         devices = make_meraki_request(url, headers)
         if devices:
             # Get uplink information for each device
@@ -660,36 +581,9 @@ def get_network_topology(api_key, network_id):
 # ==================================================
 # Helper function for making Meraki API requests
 # ==================================================
-def get_meraki_cert():
-    """Get the Meraki API certificate configuration"""
-    import platform
-    import certifi
-    import ssl
-    import os
-    import requests.adapters
-    
-    # For Windows with proxy (like Zscaler)
-    if platform.system() == 'Windows':
-        try:
-            # Create custom adapter that accepts proxy certificates
-            class ProxyAdapter(requests.adapters.HTTPAdapter):
-                def init_poolmanager(self, *args, **kwargs):
-                    ctx = ssl.create_default_context()
-                    # Accept proxy certificates
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
-                    kwargs['ssl_context'] = ctx
-                    return super(ProxyAdapter, self).init_poolmanager(*args, **kwargs)
-            
-            return ProxyAdapter()
-        except Exception:
-            return False
-    
-    return certifi.where()
-
-def make_meraki_request(url, headers, params=None, max_retries=3, retry_delay=1):
+def make_meraki_request(url, headers, params=None, max_retries=3, retry_delay=1, timeout=30):
     """
-    Make a request to the Meraki API with enhanced error handling, rate limiting, and retries
+    Make a request to the Meraki API with enhanced error handling and SSL verification
     
     Args:
         url (str): The API endpoint URL
@@ -697,75 +591,93 @@ def make_meraki_request(url, headers, params=None, max_retries=3, retry_delay=1)
         params (dict, optional): Query parameters
         max_retries (int): Maximum number of retry attempts
         retry_delay (int): Delay between retries in seconds
+        timeout (int): Request timeout in seconds
     
     Returns:
         dict: JSON response from the API
     """
     import time
-    from requests.exceptions import RequestException, SSLError
+    import platform
+    import os
+    import ssl
+    import certifi
+    import logging
     import urllib3
-    
-    # Disable SSL verification warnings
-    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    
-    # Create a session
-    session = requests.Session()
-    
-    # Get SSL configuration
-    ssl_config = get_meraki_cert()
-    
-    if isinstance(ssl_config, requests.adapters.HTTPAdapter):
-        # If we got an adapter (Windows with proxy), use it
-        session.mount('https://', ssl_config)
-        verify = False  # Disable verification since we're going through a proxy
-        print("Using proxy-aware SSL configuration")
-    else:
-        # Otherwise use the certificate path
-        verify = ssl_config
-    
-    if not verify:
-        print("Warning: SSL verification disabled. Connection is not secure.")
-        session.verify = False
-    
-    for attempt in range(max_retries):
-        try:
-            response = session.get(url, headers=headers, params=params)
-            
-            # Handle rate limiting
-            if response.status_code == 429:
-                retry_after = int(response.headers.get('Retry-After', retry_delay))
-                time.sleep(retry_after)
-                continue
-            
-            # Handle common error codes
-            if response.status_code == 401:
-                raise Exception("Unauthorized: Please check your API key")
-            elif response.status_code == 403:
-                raise Exception("Forbidden: Your API key doesn't have access to this resource")
-            elif response.status_code == 404:
-                raise Exception("Not Found: The requested resource doesn't exist")
-            
-            response.raise_for_status()
-            return response.json()
-            
-        except SSLError as ssl_err:
-            if verify:
-                print(f"SSL Error: {str(ssl_err)}")
-                print("Falling back to insecure connection...")
-                session.verify = False
-                verify = False
-                continue
-            raise Exception("SSL verification failed and insecure connection not allowed")
-        except RequestException as e:
-            if attempt == max_retries - 1:
-                raise Exception(f"API request failed after {max_retries} attempts: {str(e)}")
-            time.sleep(retry_delay)
-            continue
-        except Exception as e:
-            raise Exception(f"Unexpected error: {str(e)}")
-    
-    raise Exception("Maximum retry attempts reached")
+    import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.poolmanager import PoolManager
+    from urllib3.util.retry import Retry
 
+    class TLSAdapter(HTTPAdapter):
+        """Custom adapter for handling TLS in proxy environments"""
+        def __init__(self, **kwargs):
+            self.ssl_context = ssl.create_default_context()
+            if platform.system() == 'Windows':
+                self.ssl_context.check_hostname = False
+                self.ssl_context.verify_mode = ssl.CERT_NONE
+            else:
+                self.ssl_context.load_verify_locations(certifi.where())
+            super().__init__(**kwargs)
+
+        def init_poolmanager(self, *args, **kwargs):
+            kwargs['ssl_context'] = self.ssl_context
+            return super().init_poolmanager(*args, **kwargs)
+
+    session = requests.Session()
+
+    # Configure retry strategy with exponential backoff
+    retry_strategy = Retry(
+        total=max_retries,
+        backoff_factor=retry_delay,
+        status_forcelist=[429, 500, 502, 503, 504]
+    )
+
+    if platform.system() == 'Windows':
+        # Special handling for Windows with proxy (e.g., Zscaler)
+        logging.warning("Using Windows-specific proxy configuration with SSL verification disabled")
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        # Clear any conflicting environment variables
+        os.environ.pop('REQUESTS_CA_BUNDLE', None)
+        os.environ.pop('SSL_CERT_FILE', None)
+        
+        session.verify = False
+    else:
+        # Standard SSL verification for other platforms
+        logging.info("Using standard SSL verification with system certificates")
+        session.verify = certifi.where()
+
+    # Use custom adapter with appropriate SSL configuration
+    adapter = TLSAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+
+    try:
+        logging.info(f"Making request to {url} with timeout {timeout}s")
+        response = session.get(url, headers=headers, params=params, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.Timeout as e:
+        logging.error(f"Request timed out after {timeout}s: {str(e)}")
+        raise Exception(f"API request timed out after {timeout}s. The Meraki API may be experiencing high latency. Please try again later or increase the timeout value.")
+    except requests.exceptions.SSLError as e:
+        logging.error(f"SSL Error: {str(e)}")
+        if platform.system() == 'Windows':
+            # Retry with SSL verification completely disabled
+            logging.warning("Retrying request with SSL verification disabled...")
+            session.verify = False
+            try:
+                response = session.get(url, headers=headers, params=params, timeout=timeout)
+                response.raise_for_status()
+                return response.json()
+            except requests.exceptions.Timeout as retry_timeout:
+                logging.error(f"Retry request timed out after {timeout}s: {str(retry_timeout)}")
+                raise Exception(f"API request timed out after {timeout}s during SSL fallback. The Meraki API may be experiencing high latency. Please try again later or increase the timeout value.")
+            except Exception as retry_error:
+                raise Exception(f"SSL Error: Unable to establish secure connection through proxy. Error: {str(retry_error)}")
+        raise Exception("SSL Error: Certificate verification failed. Please check your system's CA certificates.")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Request failed: {str(e)}")
+        raise Exception(f"API request failed: {str(e)}")
 
 # Secure API key management functions
 def generate_key():
@@ -851,19 +763,23 @@ def initialize_api_key():
     Returns:
         str: The API key or None if not found
     """
-    # First try environment variable
-    api_key = os.getenv('MERAKI_DASHBOARD_API_KEY')
-    if api_key:
-        # Store it securely if found in environment
-        store_api_key(api_key)
-        return api_key
-    
-    # Try to load stored key
-    api_key = load_api_key()
-    if api_key:
-        return api_key
-    
-    print("No API key found. Please set the MERAKI_DASHBOARD_API_KEY environment variable or use store_api_key() function.")
-    return None
-    return None
-    return None
+    try:
+        # First try environment variable
+        api_key = os.getenv('MERAKI_DASHBOARD_API_KEY')
+        if api_key:
+            # Store it securely if found in environment
+            store_api_key(api_key)
+            return api_key
+        
+        # Try to load stored key
+        api_key = load_api_key()
+        if api_key:
+            return api_key
+        
+        print("No API key found. Please set the MERAKI_DASHBOARD_API_KEY environment variable or use store_api_key() function.")
+        return None
+    except Exception as e:
+        logging.error(f"Error initializing API key: {str(e)}")
+        return None
+
+# End of API implementation

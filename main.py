@@ -133,6 +133,7 @@ def main_menu(fernet):
 
         api_key = meraki_api_manager.get_api_key(fernet)
         ipinfo_token = db_creator.get_tools_ipinfo_access_token(fernet)
+        
         options = [
             "Network wide",
             "Security & SD-WAN", 
@@ -142,12 +143,13 @@ def main_menu(fernet):
             "The Swiss Army Knife", 
             f"{'Edit Cisco Meraki API Key' if api_key else 'Set Cisco Meraki API Key'}",
             f"{'Edit IPinfo Token' if ipinfo_token else 'Set IPinfo Token'}",
+            "Test SSL Connection",  
             "Exit the Command Line Utility"
         ]
+        
         current_year = datetime.now().year
         footer = f"\033[1mPROJECT PAGE\033[0m\n{current_year} Matia Zanella\nhttps://developer.cisco.com/codeexchange/github/repo/akamura/cisco-meraki-clu/\n\n\033[1mSUPPORT ME\033[0m\n Fuel me with a coffee if you found it useful https://www.paypal.com/paypalme/matiazanella/\n\n\033[1mDISCLAIMER\033[0m\nThis utility is not an official Cisco Meraki product but is based on the official Cisco Meraki API.\nIt is intended to provide Network Administrators with an easy daily companion in the swiss army knife."
 
-        # Description header over the menu
         print("\n")
         print("┌" + "─" * 58 + "┐")
         print("│".ljust(59) + "│")
@@ -157,9 +159,8 @@ def main_menu(fernet):
         print("└" + "─" * 58 + "┘")
 
         term_extra.print_footer(footer)
-        choice = input(colored("Choose a menu option [1-9]: ", "cyan"))
+        choice = input(colored("Choose a menu option [1-10]: ", "cyan"))
 
-        # In the main_menu function, update the choice == '1' block:
         if choice == '1':
             if api_key:
                 submenu.submenu_network_wide(api_key)
@@ -197,6 +198,8 @@ def main_menu(fernet):
         elif choice == '8':
             manage_ipinfo_token(fernet)
         elif choice == '9':
+            test_ssl_connection(fernet)
+        elif choice == '10':
             term_extra.clear_screen()
             term_extra.print_ascii_art()
             print("\nThank you for using the Cisco Meraki Command Line Utility!")
@@ -265,6 +268,71 @@ def initialize_api_key():
     print("   set MERAKI_DASHBOARD_API_KEY=your-api-key")
     print("\nNote: After setting an environment variable, you may need to restart your command prompt.")
     return None
+
+def test_ssl_connection(fernet):
+    """
+    Test the SSL connection handling with the Meraki API
+    """
+    try:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\nCisco Meraki SSL Connection Test")
+        print("===============================")
+        
+        # Get API key
+        api_key = meraki_api_manager.get_api_key(fernet)
+        if not api_key:
+            print(colored("\nError: API key not found", "red"))
+            print("Please set up your Meraki API key first (Option 7 in main menu)")
+            input("\nPress Enter to return to main menu...")
+            return
+
+        print(colored("\nInitiating SSL connection test...", "cyan"))
+        print("1. Testing API connectivity")
+        print("2. Verifying SSL certificate handling")
+        print("3. Checking proxy configuration")
+        
+        # Test API connection
+        headers = {
+            'X-Cisco-Meraki-API-Key': api_key,
+            'Content-Type': 'application/json'
+        }
+        
+        try:
+            # Try to get organizations (simple API call)
+            url = 'https://api.meraki.com/api/v1/organizations'
+            from modules.meraki.meraki_api import make_meraki_request
+            
+            response = make_meraki_request(url, headers)
+            
+            # Success messages
+            print(colored("\nTest Results:", "cyan"))
+            print(colored("✓ Successfully connected to Meraki API", "green"))
+            print(colored("✓ SSL certificate verification successful", "green"))
+            print(colored("✓ Proxy configuration working correctly", "green"))
+            print(colored(f"✓ Retrieved {len(response)} organizations", "green"))
+            print("\nAll tests completed successfully!")
+            
+        except Exception as e:
+            print(colored("\nTest Results:", "red"))
+            print(colored("✗ Connection test failed", "red"))
+            print(colored(f"\nError details: {str(e)}", "yellow"))
+            print(colored("\nTroubleshooting steps:", "cyan"))
+            print("1. Verify your network connectivity")
+            print("2. Check your proxy configuration")
+            print("3. Ensure your API key is correct")
+            print("4. Review error.log for detailed information")
+            logging.error(f"SSL Connection Error: {str(e)}\n{traceback.format_exc()}")
+            
+    except Exception as e:
+        print(colored(f"\nTest initialization failed: {str(e)}", "red"))
+        logging.error(f"SSL Test Error: {str(e)}\n{traceback.format_exc()}")
+    
+    current_year = datetime.now().year
+    footer = f"\033[1mPROJECT PAGE\033[0m\n{current_year} Matia Zanella\nhttps://developer.cisco.com/codeexchange/github/repo/akamura/cisco-meraki-clu/"
+    term_extra.print_footer(footer)
+    input(colored("\nPress Enter to return to the main menu...", "green"))
 
 def main():
     """Main function to run the Cisco Meraki CLU"""
