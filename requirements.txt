@@ -15,3 +15,4 @@ ipaddress
 flask>=2.0.1
 certifi>=2023.11.17
 pyOpenSSL>=23.3.0
+meraki>=1.54.0  # Official Meraki Dashboard API Python SDK

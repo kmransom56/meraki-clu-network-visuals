@@ -38,7 +38,16 @@ from flask import Flask, render_template, jsonify
 from pathlib import Path
 from datetime import datetime
 from termcolor import colored
-
+import logging
+import threading
+import time
+import socket
+import random
+import sys
+import requests
+import json
+import ipaddress
+from tabulate import tabulate
 
 # ==================================================
 # IMPORT custom modules
@@ -46,12 +55,14 @@ from termcolor import colored
 from modules.meraki import meraki_api 
 from modules.meraki import meraki_ms_mr
 from modules.meraki import meraki_mx
+from modules.meraki import meraki_network
 from modules.tools.dnsbl import dnsbl_check
 from modules.tools.utilities import tools_ipcheck
 from modules.tools.utilities import tools_passgen
 from modules.tools.utilities import tools_subnetcalc
 
 from settings import term_extra
+from utilities.topology_visualizer import visualize_network_topology
 
 import logging
 
@@ -61,47 +72,92 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 # ==================================================
 # Define helper functions
 # ==================================================
-def select_organization(api_key):
-    return meraki_api.select_organization(api_key)
+def select_organization(api_key_or_sdk):
+    """
+    Select an organization using either API key or SDK wrapper
+    
+    Args:
+        api_key_or_sdk: Either a Meraki API key string or an SDK wrapper object
+        
+    Returns:
+        organization_id: The selected organization ID or None if selection fails
+    """
+    logging.info(f"Selecting organization with {'SDK wrapper' if not isinstance(api_key_or_sdk, str) else 'custom API'}")
+    
+    try:
+        # Determine if we're using the API key or SDK wrapper
+        if isinstance(api_key_or_sdk, str):
+            logging.info("Using custom API for organization selection")
+            organizations = meraki_api.get_meraki_organizations(api_key_or_sdk)
+        else:
+            logging.info("Using SDK wrapper for organization selection")
+            organizations = api_key_or_sdk.get_organizations()
+        
+        if organizations:
+            print(colored("\nAvailable Organizations:", "cyan"))
+            for idx, org in enumerate(organizations, 1):
+                print(f"{idx}. {org['name']}")
+            
+            while True:
+                choice = input(colored("\nSelect an Organization (enter the number): ", "cyan"))
+                try:
+                    selected_index = int(choice) - 1
+                    if 0 <= selected_index < len(organizations):
+                        org_id = organizations[selected_index]['id']
+                        logging.debug(f"Selected organization ID: {org_id}")
+                        return org_id
+                    else:
+                        print(colored("Invalid selection. Please try again.", "red"))
+                except ValueError:
+                    print(colored("Please enter a number.", "red"))
+                    
+        else:
+            print(colored("No organizations found.", "red"))
+            return None
+            
+    except Exception as api_error:
+        logging.error(f"Error in primary organization selection method: {str(api_error)}")
+        
+        # If we're using the SDK and it failed, try the direct API approach
+        if not isinstance(api_key_or_sdk, str):
+            logging.info("Attempting fallback to direct API call for organization selection")
+            try:
+                api_key = api_key_or_sdk.api_key
+                organizations = meraki_api.get_meraki_organizations(api_key)
+                
+                if organizations:
+                    print(colored("\nAvailable Organizations (via fallback):", "cyan"))
+                    for idx, org in enumerate(organizations, 1):
+                        print(f"{idx}. {org['name']}")
+                    
+                    while True:
+                        choice = input(colored("\nSelect an Organization (enter the number): ", "cyan"))
+                        try:
+                            selected_index = int(choice) - 1
+                            if 0 <= selected_index < len(organizations):
+                                org_id = organizations[selected_index]['id']
+                                logging.debug(f"Selected organization ID (via fallback): {org_id}")
+                                return org_id
+                            else:
+                                print(colored("Invalid selection. Please try again.", "red"))
+                        except ValueError:
+                            print(colored("Please enter a number.", "red"))
+            except Exception as fallback_error:
+                logging.error(f"Fallback organization selection also failed: {str(fallback_error)}")
+        
+        # If all else fails, let the user manually enter an organization ID
+        print(colored("\nAutomated organization selection failed. You can manually enter an organization ID if you know it.", "yellow"))
+        org_id = input(colored("Enter organization ID (or leave blank to cancel): ", "cyan"))
+        if org_id.strip():
+            logging.debug(f"Manually entered organization ID: {org_id}")
+            return org_id
+        
+        print(colored("Organization selection cancelled.", "red"))
+        return None
 
 # ==================================================
 # VISUALIZE submenus for Appliance, Switches and APs
 # ==================================================
-def submenu_sw_and_ap(api_key):
-    while True:
-        term_extra.clear_screen()
-        term_extra.print_ascii_art()
-        options = ["Select an Organization", "Return to Main Menu"]
-        
-        # Description header over the menu
-        print("\n")
-        print("┌" + "─" * 58 + "┐")
-        print("│".ljust(59) + "│")
-        for index, option in enumerate(options, start=1):
-            print(f"│ {index}. {option}".ljust(59) + "│")
-        print("│".ljust(59) + "│")
-        print("└" + "─" * 58 + "┘")
-
-        choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
-
-        if choice == '1':
-            selected_org = select_organization(api_key)
-            if selected_org:
-                term_extra.clear_screen()
-                term_extra.print_ascii_art()
-                print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
-        
-                # Log the selected organization ID
-                logging.debug(f"Selected organization ID: {selected_org['id']}")
-        
-                try:
-                    meraki_mx.select_mx_network(api_key, selected_org['id'])
-                except Exception as e:
-                    # Log the error
-                    logging.error(f"Error selecting MX network: {e}")
-        elif choice == '2':
-            break
-
 def submenu_mx(api_key):
     while True:
         term_extra.clear_screen()
@@ -130,31 +186,111 @@ def submenu_mx(api_key):
             break
 
 def submenu_network_wide(api_key):
+    """Submenu for Network Wide operations"""
     while True:
         term_extra.clear_screen()
         term_extra.print_ascii_art()
-        options = ["Select an Organization", "Return to Main Menu"]
-
-        # Description header over the menu
+        
         print("\n")
         print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 22 + "NETWORK WIDE" + " " * 23 + "│")
         print("│".ljust(59) + "│")
-        for index, option in enumerate(options, start=1):
-            print(f"│ {index}. {option}".ljust(59) + "│")
+        print("│ 1. Display network topology".ljust(59) + "│")
+        print("│ 2. Display network clients".ljust(59) + "│")
+        print("│ 3. Display network devices".ljust(59) + "│")
+        print("│ 4. Return to main menu".ljust(59) + "│")
         print("│".ljust(59) + "│")
         print("└" + "─" * 58 + "┘")
-
-        choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
-
+        
+        choice = input(colored("\nChoose a menu option [1-4]: ", "cyan"))
+        
         if choice == '1':
-            selected_org = select_organization(api_key)
-            if selected_org:
-                term_extra.clear_screen()
-                term_extra.print_ascii_art()
-                print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
-                network_wide_operations(api_key, selected_org['id'])
+            organization_id = select_organization(api_key)
+            if organization_id:
+                network_id = select_network(api_key, organization_id)
+                if network_id:
+                    network_name = meraki_api.get_network_name(api_key, network_id)
+                    topology_data = meraki_api.get_network_topology(api_key, network_id)
+                    if topology_data:
+                        topology_data['network_name'] = network_name
+                        create_web_visualization(topology_data)
+            input(colored("\nPress Enter to continue...", "green"))
         elif choice == '2':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                network_id = select_network(api_key, organization_id)
+                if network_id:
+                    clients = meraki_api.get_network_clients(api_key, network_id, timespan=10800)
+                    meraki_network.display_network_clients(clients)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '3':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                network_id = select_network(api_key, organization_id)
+                if network_id:
+                    devices = meraki_api.get_network_devices(api_key, network_id)
+                    meraki_network.display_network_devices(devices)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '4':
             break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+def submenu_sw_and_ap(api_key):
+    """Submenu for Switches and APs"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 20 + "SWITCHES AND WIRELESS" + " " * 20 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Display network status".ljust(59) + "│")
+        print("│ 2. Display switch ports".ljust(59) + "│")
+        print("│ 3. Display clients".ljust(59) + "│")
+        print("│ 4. Display SSID".ljust(59) + "│")
+        print("│ 5. Return to main menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-5]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                network_id = select_network(api_key, organization_id)
+                if network_id:
+                    devices = meraki_api.get_network_devices(api_key, network_id)
+                    meraki_network.display_network_status(devices)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '2':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                network_id = select_network(api_key, organization_id)
+                if network_id:
+                    meraki_ms_mr.display_switch_ports(api_key, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '3':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                network_id = select_network(api_key, organization_id)
+                if network_id:
+                    meraki_ms_mr.display_clients(api_key, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '4':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                network_id = select_network(api_key, organization_id)
+                if network_id:
+                    meraki_ms_mr.display_ssid(api_key, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '5':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
 
 def create_web_visualization(topology_data):
     """Create and launch web visualization"""
@@ -542,6 +678,14 @@ def network_wide_operations(api_key, organization_id):
         elif choice in ['1', '2', '3', '4', '5', '6', '7', '8']:
             network_id = meraki_api.select_network(api_key, organization_id)
             if network_id:
+                # Get network details for visualization title
+                networks = meraki_api.get_organization_networks(api_key, organization_id)
+                network_name = "Unknown Network"
+                for network in networks:
+                    if network.get('id') == network_id:
+                        network_name = network.get('name', "Unknown Network")
+                        break
+                
                 if choice == '1':
                     health = meraki_api.get_network_health(api_key, network_id)
                     if health:
@@ -610,28 +754,131 @@ def network_wide_operations(api_key, organization_id):
                                     print(f"IP: {interface.get('ip', 'N/A')}")
                                     print("-" * 30)
                 elif choice == '7':
-                    topology = meraki_api.get_network_topology(api_key, network_id)
-                    if topology:
-                        print(colored("\nNetwork Topology:", "cyan"))
-                        print("\nDevices:")
-                        for node in topology['nodes']:
-                            print(f"- {node['name']} ({node['model']})")
-                            print(f"  Type: {node['type']}")
-                            print(f"  Status: {node['status']}")
-                            print("-" * 30)
+                    print(colored("\nGenerating enhanced network diagram...", "cyan"))
+                    try:
+                        # Get network devices
+                        devices = meraki_api.get_network_devices(api_key, network_id)
                         
-                        print("\nConnections:")
-                        for link in topology['links']:
-                            print(f"- {link['source']} -> {link['target']}")
-                            print(f"  Interface: {link['interface']}")
-                            print(f"  Type: {link['type']}")
-                            print("-" * 30)
+                        # Get network clients
+                        clients = meraki_api.get_network_clients(api_key, network_id)
+                        
+                        # Try to get topology links from API
+                        links = None
+                        try:
+                            links = meraki_api.get_network_topology_links(api_key, network_id)
+                        except Exception as e:
+                            logging.warning(f"Could not get topology links from API, building manually: {str(e)}")
+                        
+                        # Get network details for name
+                        network_details = meraki_api.get_network(api_key, network_id)
+                        network_name = network_details.get('name', 'Network')
+                        
+                        # Import the topology building and visualization functions
+                        from utilities.topology_visualizer import build_topology_from_api_data, visualize_network_topology
+                        
+                        # Build the topology with the collected data
+                        topology = build_topology_from_api_data(devices, clients, links)
+                        
+                        # Display summary of the topology
+                        print("\nNetwork Topology Summary:")
+                        print(f"Devices: {len(devices)}")
+                        print(f"Clients: {len(clients)}")
+                        print(f"Connections: {len(topology['links'])}")
+                        
+                        # Display device types
+                        device_types = {}
+                        for node in topology['nodes']:
+                            node_type = node.get('type', 'unknown')
+                            device_types[node_type] = device_types.get(node_type, 0) + 1
+                        
+                        print("\nDevice Types:")
+                        for device_type, count in device_types.items():
+                            print(f"{device_type}: {count}")
+                        
+                        # Display devices
+                        print("\nDevices:")
+                        device_table = []
+                        for device in devices:
+                            device_table.append([
+                                device.get('name', 'Unknown'),
+                                device.get('model', 'Unknown'),
+                                device.get('type', 'Unknown'),
+                                device.get('lanIp', device.get('ip', 'Unknown')),
+                                "Yes" if device.get('uplinkSupported', False) else "No"
+                            ])
+                        
+                        print(tabulate(device_table, headers=['Name', 'Model', 'Type', 'IP Address', 'Uplink Support'], 
+                                      tablefmt='pretty'))
+                        
+                        # Display sample of clients
+                        print("\nClient Devices (sample):")
+                        client_table = []
+                        for client in clients[:10]:  # Show first 10 clients
+                            client_table.append([
+                                client.get('description', client.get('dhcpHostname', client.get('hostname', 'Unknown'))),
+                                client.get('deviceType', 'unknown'),
+                                client.get('ip', 'Unknown'),
+                                client.get('mac', 'Unknown'),
+                                client.get('vlan', 'Unknown')
+                            ])
+                        
+                        print(tabulate(client_table, headers=['Name', 'Type', 'IP Address', 'MAC', 'VLAN'], 
+                                      tablefmt='pretty'))
+                        
+                        if len(clients) > 10:
+                            print(f"... and {len(clients) - 10} more clients")
+                        
+                        # Generate and open the visualization
+                        html_path = visualize_network_topology(topology, network_name)
+                        if html_path:
+                            print(colored(f"\nNetwork topology visualization saved to {html_path}", "green"))
+                            print(colored("The visualization has been opened in your default web browser.", "green"))
+                        else:
+                            print(colored("\nFailed to generate network topology visualization.", "red"))
+                    except Exception as e:
+                        logging.error(f"Error generating network diagram: {str(e)}")
+                        print(colored(f"\nError generating network diagram: {str(e)}", "red"))
+                    
+                    input("\nPress Enter to continue...")
                 elif choice == '8':
-                    topology = meraki_api.get_network_topology(api_key, network_id)
-                    if topology:
-                        print(colored("\nLaunching web visualization...", "cyan"))
-                        create_web_visualization(topology)
-                input(colored("\nPress Enter to continue...", "green"))
+                    # Launch web visualization directly
+                    print(colored("\nLaunching enhanced web visualization...", "cyan"))
+                    try:
+                        # Get network devices
+                        devices = meraki_api.get_network_devices(api_key, network_id)
+                        
+                        # Get network clients
+                        clients = meraki_api.get_network_clients(api_key, network_id)
+                        
+                        # Try to get topology links from API
+                        links = None
+                        try:
+                            links = meraki_api.get_network_topology_links(api_key, network_id)
+                        except Exception as e:
+                            logging.warning(f"Could not get topology links from API, building manually: {str(e)}")
+                        
+                        # Get network details for name
+                        network_details = meraki_api.get_network(api_key, network_id)
+                        network_name = network_details.get('name', 'Network')
+                        
+                        # Import the topology building and visualization functions
+                        from utilities.topology_visualizer import build_topology_from_api_data, visualize_network_topology
+                        
+                        # Build the topology with the collected data
+                        topology = build_topology_from_api_data(devices, clients, links)
+                        
+                        # Generate and open the visualization
+                        html_path = visualize_network_topology(topology, network_name)
+                        if html_path:
+                            print(colored(f"\nNetwork topology visualization saved to {html_path}", "green"))
+                            print(colored("The visualization has been opened in your default web browser.", "green"))
+                        else:
+                            print(colored("\nFailed to generate network topology visualization.", "red"))
+                    except Exception as e:
+                        logging.error(f"Error launching web visualization: {str(e)}")
+                        print(colored(f"\nError launching web visualization: {str(e)}", "red"))
+                    
+                    input("\nPress Enter to continue...")
         else:
             print(colored("Invalid choice. Please try again.", "red"))
             input(colored("\nPress Enter to continue...", "green"))
@@ -640,77 +887,152 @@ def network_wide_operations(api_key, organization_id):
 # ==================================================
 # DEFINE how to process data inside Networks
 # ==================================================
-def select_network(api_key, organization_id):
-    selected_network = meraki_api.select_network(api_key, organization_id)
-    if selected_network:
-        network_name = selected_network['name']
-        network_id = selected_network['id']
-
-        downloads_path = str(Path.home() / "Downloads")
-        current_date = datetime.now().strftime("%Y-%m-%d")
-        meraki_dir = os.path.join(downloads_path, f"Cisco-Meraki-CLU-Export-{current_date}")
-        os.makedirs(meraki_dir, exist_ok=True)
-
+def select_network(api_key_or_sdk, organization_id):
+    """
+    Select a network using either API key or SDK wrapper with enhanced selection options
+    
+    Args:
+        api_key_or_sdk: Either a Meraki API key string or an SDK wrapper object
+        organization_id: The organization ID to get networks from
+        
+    Returns:
+        network_id: The selected network ID or None if selection fails
+    """
+    logging.info(f"Selecting network for organization {organization_id}")
+    
+    try:
+        # Determine if we're using the API key or SDK wrapper
+        if isinstance(api_key_or_sdk, str):
+            logging.info("Using custom API for network selection")
+            networks = meraki_api.get_organization_networks(api_key_or_sdk, organization_id)
+        else:
+            logging.info("Using SDK wrapper for network selection")
+            networks = api_key_or_sdk.get_organization_networks(organization_id)
+        
+        if not networks:
+            print(colored("\nNo networks found for this organization.", "red"))
+            return None
+        
+        # Sort networks alphabetically by name
+        networks.sort(key=lambda x: x['name'])
+        
+        # Initialize variables for pagination and search
+        page_size = 20
+        current_page = 0
+        search_term = ""
+        filtered_networks = networks
+        
         while True:
             term_extra.clear_screen()
-            term_extra.print_ascii_art()
-
-            options = [
-                "Get Switches",
-                "Get Access Points",
-                "Get Switch Ports",
-                "Get Devices Statuses",
-                "Download Switches CSV",
-                "Download Access Points CSV",
-                "Download Devices Statuses CSV (under dev)",
-                "Return to Main Menu"
-            ]
             
-            # Description header over the menu
-            print("\n")
-            print("┌" + "─" * 58 + "┐")
-            print("│".ljust(59) + "│")
-            for index, option in enumerate(options, start=1):
-                print(f"│ {index}. {option}".ljust(59) + "│")
-            print("│".ljust(59) + "│")
-            print("└" + "─" * 58 + "┘")
-
-            choice = input(colored("\nChoose a menu option [1-8]: ", "cyan"))
-
-            if choice == '1':
-                meraki_ms_mr.display_devices(api_key, network_id, 'switches')
-            elif choice == '2':
-                meraki_ms_mr.display_devices(api_key, network_id, 'access_points')
-            elif choice == '3':
-                serial_number = input("\nEnter the switch serial number: ")
-                if serial_number:
-                    print(f"Fetching switch ports for serial: {serial_number}")
-                    meraki_ms_mr.display_switch_ports(api_key, serial_number)
+            # Apply search filter if search term exists
+            if search_term:
+                filtered_networks = [n for n in networks if search_term.lower() in n['name'].lower()]
+                if not filtered_networks:
+                    print(colored(f"\nNo networks found matching '{search_term}'", "yellow"))
+                    search_term = ""
+                    filtered_networks = networks
+                    continue
+            
+            # Calculate pagination
+            total_pages = (len(filtered_networks) + page_size - 1) // page_size
+            start_idx = current_page * page_size
+            end_idx = min(start_idx + page_size, len(filtered_networks))
+            
+            # Display header with pagination info
+            print(colored("\nNetwork Selection", "cyan"))
+            print(f"Showing {start_idx+1}-{end_idx} of {len(filtered_networks)} networks")
+            if search_term:
+                print(f"Search filter: '{search_term}'")
+            print("-" * 50)
+            
+            # Display current page of networks
+            for i in range(start_idx, end_idx):
+                network = filtered_networks[i]
+                print(f"{i+1}. {network['name']}")
+            
+            # Display navigation options
+            print("\nOptions:")
+            print("  Enter a number to select a network")
+            if current_page > 0:
+                print("  P - Previous page")
+            if current_page < total_pages - 1:
+                print("  N - Next page")
+            print("  S - Search networks")
+            if search_term:
+                print("  C - Clear search")
+            print("  Q - Cancel selection")
+            
+            choice = input(colored("\nEnter your choice: ", "cyan")).strip()
+            
+            # Handle navigation and search options
+            if choice.lower() == 'p' and current_page > 0:
+                current_page -= 1
+            elif choice.lower() == 'n' and current_page < total_pages - 1:
+                current_page += 1
+            elif choice.lower() == 's':
+                search_term = input(colored("Enter search term: ", "cyan")).strip()
+                current_page = 0  # Reset to first page when searching
+            elif choice.lower() == 'c' and search_term:
+                search_term = ""
+                filtered_networks = networks
+                current_page = 0
+            elif choice.lower() == 'q':
+                print(colored("Network selection cancelled.", "yellow"))
+                return None
+            elif choice.isdigit():
+                idx = int(choice) - 1
+                if 0 <= idx < len(filtered_networks):
+                    selected_network = filtered_networks[idx]
+                    network_id = selected_network['id']
+                    print(colored(f"\nSelected network: {selected_network['name']}", "green"))
+                    logging.debug(f"Selected network: {selected_network['name']} (ID: {network_id})")
+                    return network_id
                 else:
-                    print("[red]Invalid input. Please enter a valid serial number.[/red]")
-            elif choice == '4':
-                meraki_ms_mr.display_organization_devices_statuses(api_key, organization_id, network_id)
-            elif choice == '5':
-                switches = meraki_api.get_meraki_switches(api_key, network_id)
-                if switches:
-                    meraki_api.export_devices_to_csv(switches, network_name, 'switches', meraki_dir)
-                else:
-                    print("No switches to download.")
-                choice = input(colored("\nPress Enter to return to the precedent menu...", "green"))
+                    print(colored("Invalid network number. Please try again.", "red"))
+                    input("Press Enter to continue...")
+            else:
+                print(colored("Invalid choice. Please try again.", "red"))
+                input("Press Enter to continue...")
                 
-            elif choice == '6':
-                access_points = meraki_api.get_meraki_access_points(api_key, network_id)
-                if access_points:
-                    meraki_api.export_devices_to_csv(access_points, network_name, 'access_points', meraki_dir)
-                else:
-                    print("No access points to download.")
-                choice = input(colored("\nPress Enter to return to the precedent menu...", "green"))
-
-            elif choice == '8':
-                break
-    else:
-        print("[red]No network selected or invalid organization ID.[/red]")
-
+    except Exception as e:
+        logging.error(f"Error in primary network selection method: {str(e)}")
+        
+        # If we're using the SDK and it failed, try the direct API approach
+        if not isinstance(api_key_or_sdk, str):
+            logging.info("Attempting fallback to direct API call for network selection")
+            try:
+                api_key = api_key_or_sdk.api_key
+                networks = meraki_api.get_organization_networks(api_key, organization_id)
+                
+                if networks:
+                    print(colored("\nAvailable Networks (via fallback):", "cyan"))
+                    for i, network in enumerate(networks, 1):
+                        print(f"{i}. {network['name']}")
+                    
+                    while True:
+                        try:
+                            choice = int(input(colored("\nSelect a network (number): ", "cyan")))
+                            if 1 <= choice <= len(networks):
+                                network_id = networks[choice - 1]['id']
+                                logging.debug(f"Selected network ID (via fallback): {network_id}")
+                                return network_id
+                            else:
+                                print(colored("Invalid choice. Please try again.", "red"))
+                        except ValueError:
+                            print(colored("Please enter a valid number.", "red"))
+            except Exception as fallback_error:
+                logging.error(f"Fallback network selection also failed: {str(fallback_error)}")
+        
+                # If all else fails, let the user manually enter a network ID
+                print(colored("\nAutomated network selection failed. You can manually enter a network ID if you know it.", "yellow"))
+                network_id = input(colored("Enter network ID (or leave blank to cancel): ", "cyan"))
+                if network_id.strip():
+                    logging.debug(f"Manually entered network ID: {network_id}")
+                    return network_id
+                
+                print(colored("Network selection cancelled.", "red"))
+                return None
 
 # ==================================================
 # DEFINE the Swiss Army Knife submenu
@@ -784,9 +1106,9 @@ def submenu_environmental(api_key):
         if choice == '4':
             break
         elif choice in ['1', '2', '3']:
-            organization_id = meraki_api.select_organization(api_key)
+            organization_id = select_organization(api_key)
             if organization_id:
-                network_id = meraki_api.select_network(api_key, organization_id)
+                network_id = select_network(api_key, organization_id)
                 if network_id:
                     if choice == '1':
                         alerts = meraki_api.get_network_sensor_alerts(api_key, network_id)
@@ -834,78 +1156,1051 @@ def submenu_environmental(api_key):
 def submenu_organization(api_key):
     while True:
         term_extra.clear_screen()
-        print("\nOrganization Management Menu")
+        term_extra.print_ascii_art()
+        print("\nOrganization Menu")
+        print("=" * 50)
+        print("1. Select Organization")
+        print("2. Return to Main Menu")
+        
+        choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
+
+        if choice == '1':
+            try:
+                # Direct debugging to show the exact error
+                print(colored("\nAttempting to get organizations...", "yellow"))
+                try:
+                    # Try to get organizations directly
+                    import requests
+                    import platform
+                    import certifi
+                    import traceback
+                    
+                    # Configure SSL verification based on the platform
+                    if platform.system() == 'Windows':
+                        verify = False
+                    else:
+                        verify = certifi.where()
+                    
+                    # Make direct API call with detailed error handling
+                    headers = {
+                        "X-Cisco-Meraki-API-Key": api_key,
+                        "Content-Type": "application/json"
+                    }
+                    
+                    print(colored("Making direct API call to Meraki...", "yellow"))
+                    try:
+                        response = requests.get(
+                            "https://api.meraki.com/api/v1/organizations",
+                            headers=headers,
+                            verify=verify,
+                            timeout=30
+                        )
+                        
+                        print(colored(f"API Response Status: {response.status_code}", "yellow"))
+                        
+                        if response.status_code == 200:
+                            organizations = response.json()
+                            print(colored(f"Found {len(organizations)} organizations", "green"))
+                            
+                            # Display organizations for selection
+                            print(colored("\nAvailable Organizations:", "cyan"))
+                            for idx, org in enumerate(organizations, 1):
+                                print(f"{idx}. {org['name']}")
+                            
+                            choice = input(colored("\nSelect an Organization (enter the number): ", "cyan"))
+                            try:
+                                selected_index = int(choice) - 1
+                                if 0 <= selected_index < len(organizations):
+                                    organization_id = organizations[selected_index]['id']
+                                    
+                                    # Get organization details to display the name
+                                    selected_org = organizations[selected_index]
+                                    
+                                    term_extra.clear_screen()
+                                    term_extra.print_ascii_art()
+                                    print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
+                                
+                                    # Log the selected organization ID
+                                    logging.debug(f"Selected organization ID: {organization_id}")
+                                
+                                    while True:
+                                        print("\nOrganization Operations")
+                                        print("=" * 50)
+                                        print("1. View Organization Status")
+                                        print("2. View Organization Networks")
+                                        print("3. View Organization Devices")
+                                        print("4. Return to Organization Menu")
+                                        
+                                        sub_choice = input(colored("\nChoose an option [1-4]: ", "cyan"))
+                                        
+                                        if sub_choice == '1':
+                                            meraki_network.display_organization_status(api_key, organization_id)
+                                        elif sub_choice == '2':
+                                            meraki_network.display_organization_networks(api_key, organization_id)
+                                        elif sub_choice == '3':
+                                            meraki_network.display_organization_devices(api_key, organization_id)
+                                        elif sub_choice == '4':
+                                            break
+                                        else:
+                                            print(colored("\nInvalid choice. Please try again.", "red"))
+                                        
+                                        input(colored("\nPress Enter to continue...", "green"))
+                                else:
+                                    print(colored("Invalid selection.", "red"))
+                            except ValueError:
+                                print(colored("Please enter a number.", "red"))
+                        else:
+                            print(colored(f"API Error: {response.status_code} - {response.text}", "red"))
+                    except Exception as api_error:
+                        print(colored(f"API Call Error: {str(api_error)}", "red"))
+                        traceback.print_exc()
+                except Exception as debug_error:
+                    print(colored(f"Debug Error: {str(debug_error)}", "red"))
+                    traceback.print_exc()
+                
+                input(colored("\nPress Enter to continue...", "green"))
+            except Exception as e:
+                print(colored(f"\nError in organization menu: {str(e)}", "red"))
+                traceback.print_exc()
+                input(colored("\nPress Enter to continue...", "green"))
+        
+        elif choice == '2':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+def submenu_device(api_key):
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        print("\nDevice Menu")
+        print("=" * 50)
+        print("1. Switch Operations")
+        print("2. Access Point Operations")
+        print("3. Return to Main Menu")
+        
+        choice = input(colored("\nChoose a menu option [1-3]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                # Get organization details to display the name
+                organizations = meraki_api.get_meraki_organizations(api_key)
+                selected_org = next((org for org in organizations if org['id'] == organization_id), None)
+                
+                if selected_org:
+                    term_extra.clear_screen()
+                    term_extra.print_ascii_art()
+                    print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
+                    switch_operations(api_key, organization_id)
+        elif choice == '2':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                # Get organization details to display the name
+                organizations = meraki_api.get_meraki_organizations(api_key)
+                selected_org = next((org for org in organizations if org['id'] == organization_id), None)
+                
+                if selected_org:
+                    term_extra.clear_screen()
+                    term_extra.print_ascii_art()
+                    print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
+                    access_point_operations(api_key, organization_id)
+        elif choice == '3':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+def submenu_network_wide(api_key):
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        print("\nNetwork-Wide Operations Menu")
+        print("=" * 50)
+        print("1. Select Organization")
+        print("2. Return to Main Menu")
+        
+        choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                # Get organization details to display the name
+                organizations = meraki_api.get_meraki_organizations(api_key)
+                selected_org = next((org for org in organizations if org['id'] == organization_id), None)
+                
+                if selected_org:
+                    term_extra.clear_screen()
+                    term_extra.print_ascii_art()
+                    print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
+                    network_wide_operations(api_key, organization_id)
+        elif choice == '2':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# SDK-ENABLED submenu for Switches and APs
+# ==================================================
+def submenu_sw_and_ap_sdk(sdk_wrapper):
+    """Submenu for Switches and APs using the Meraki SDK"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 20 + "SWITCHES AND WIRELESS" + " " * 20 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Display network status".ljust(59) + "│")
+        print("│ 2. Display switch ports".ljust(59) + "│")
+        print("│ 3. Display clients".ljust(59) + "│")
+        print("│ 4. Display SSID".ljust(59) + "│")
+        print("│ 5. Return to main menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-5]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    devices = sdk_wrapper.get_network_devices(network_id)
+                    meraki_network.display_network_status(devices)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '2':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    meraki_ms_mr.display_switch_ports(sdk_wrapper, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '3':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    meraki_ms_mr.display_clients(sdk_wrapper, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '4':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    meraki_ms_mr.display_ssid(sdk_wrapper, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '5':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# SDK-ENABLED submenu for Security & SD-WAN
+# ==================================================
+def submenu_mx_sdk(sdk_wrapper):
+    """Submenu for Security & SD-WAN using the Meraki SDK"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 20 + "SECURITY & SD-WAN" + " " * 21 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Display firewall rules".ljust(59) + "│")
+        print("│ 2. Display VPN status".ljust(59) + "│")
+        print("│ 3. Display security events".ljust(59) + "│")
+        print("│ 4. Return to main menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-4]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    meraki_mx.display_firewall_rules(sdk_wrapper, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '2':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    meraki_mx.display_vpn_status(sdk_wrapper, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '3':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    meraki_mx.display_security_events(sdk_wrapper, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '4':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# SDK-ENABLED submenu for Network Wide
+# ==================================================
+def submenu_network_wide_sdk(sdk_wrapper):
+    """Submenu for Network Wide using the Meraki SDK"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 22 + "NETWORK WIDE" + " " * 23 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Display network topology".ljust(59) + "│")
+        print("│ 2. Display network clients".ljust(59) + "│")
+        print("│ 3. Display network devices".ljust(59) + "│")
+        print("│ 4. Return to main menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-4]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    network_name = sdk_wrapper.get_network_name(network_id)
+                    topology_data = sdk_wrapper.get_network_topology(network_id)
+                    if topology_data:
+                        topology_data['network_name'] = network_name
+                        create_web_visualization(topology_data)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '2':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    clients = sdk_wrapper.get_network_clients(network_id, timespan=10800)
+                    meraki_network.display_network_clients(clients)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '3':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    devices = sdk_wrapper.get_network_devices(network_id)
+                    meraki_network.display_network_devices(devices)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '4':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# SDK-ENABLED submenu for Environmental
+# ==================================================
+def submenu_environmental_sdk(sdk_wrapper):
+    """Submenu for Environmental using the Meraki SDK"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 21 + "ENVIRONMENTAL" + " " * 23 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Display MT sensors".ljust(59) + "│")
+        print("│ 2. Display MT sensor readings".ljust(59) + "│")
+        print("│ 3. Return to main menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-3]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    meraki_mt.display_mt_sensors(sdk_wrapper, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '2':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                network_id = select_network(sdk_wrapper, organization_id)
+                if network_id:
+                    meraki_mt.display_mt_sensor_readings(sdk_wrapper, network_id)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '3':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# SDK-ENABLED submenu for Organization
+# ==================================================
+def submenu_organization_sdk(sdk_wrapper):
+    """Submenu for Organization using the Meraki SDK"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 21 + "ORGANIZATION" + " " * 23 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Display organization networks".ljust(59) + "│")
+        print("│ 2. Display organization devices".ljust(59) + "│")
+        print("│ 3. Display organization admins".ljust(59) + "│")
+        print("│ 4. Display organization licenses".ljust(59) + "│")
+        print("│ 5. Return to main menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-5]: ", "cyan"))
+        
+        if choice == '1':
+            try:
+                organization_id = select_organization(sdk_wrapper)
+                if organization_id:
+                    # Get organization networks using the SDK wrapper
+                    networks = sdk_wrapper.get_organization_networks(organization_id)
+                    if networks:
+                        print(colored("\nOrganization Networks:", "cyan"))
+                        table_data = []
+                        for network in networks:
+                            table_data.append([
+                                network.get('name', 'N/A'),
+                                network.get('id', 'N/A'),
+                                network.get('timeZone', 'N/A'),
+                                ', '.join(network.get('productTypes', []))
+                            ])
+                        from tabulate import tabulate
+                        print(tabulate(table_data, headers=["Name", "ID", "Time Zone", "Product Types"], tablefmt="grid"))
+                    else:
+                        print(colored("No networks found for this organization.", "yellow"))
+            except Exception as e:
+                print(colored(f"Error displaying organization networks: {str(e)}", "red"))
+                logging.error(f"Error displaying organization networks: {str(e)}", exc_info=True)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '2':
+            try:
+                organization_id = select_organization(sdk_wrapper)
+                if organization_id:
+                    # Get organization devices using the SDK wrapper
+                    devices = sdk_wrapper.get_organization_devices(organization_id)
+                    if devices:
+                        print(colored("\nOrganization Devices:", "cyan"))
+                        table_data = []
+                        for device in devices:
+                            table_data.append([
+                                device.get('name', 'N/A'),
+                                device.get('serial', 'N/A'),
+                                device.get('model', 'N/A'),
+                                device.get('networkId', 'N/A'),
+                                device.get('status', 'N/A')
+                            ])
+                        from tabulate import tabulate
+                        print(tabulate(table_data, headers=["Name", "Serial", "Model", "Network ID", "Status"], tablefmt="grid"))
+                    else:
+                        print(colored("No devices found for this organization.", "yellow"))
+            except Exception as e:
+                print(colored(f"Error displaying organization devices: {str(e)}", "red"))
+                logging.error(f"Error displaying organization devices: {str(e)}", exc_info=True)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '3':
+            try:
+                organization_id = select_organization(sdk_wrapper)
+                if organization_id:
+                    # Get organization admins using the SDK wrapper
+                    admins = sdk_wrapper.get_organization_admins(organization_id)
+                    if admins:
+                        print(colored("\nOrganization Admins:", "cyan"))
+                        table_data = []
+                        for admin in admins:
+                            table_data.append([
+                                admin.get('name', 'N/A'),
+                                admin.get('email', 'N/A'),
+                                admin.get('orgAccess', 'N/A'),
+                                admin.get('authenticationMethod', 'N/A')
+                            ])
+                        from tabulate import tabulate
+                        print(tabulate(table_data, headers=["Name", "Email", "Org Access", "Auth Method"], tablefmt="grid"))
+                    else:
+                        print(colored("No admins found for this organization.", "yellow"))
+            except Exception as e:
+                print(colored(f"Error displaying organization admins: {str(e)}", "red"))
+                logging.error(f"Error displaying organization admins: {str(e)}", exc_info=True)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '4':
+            try:
+                organization_id = select_organization(sdk_wrapper)
+                if organization_id:
+                    # Get organization licenses using the SDK wrapper
+                    licenses = sdk_wrapper.get_organization_licenses(organization_id)
+                    if licenses:
+                        print(colored("\nOrganization Licenses:", "cyan"))
+                        table_data = []
+                        for license in licenses:
+                            table_data.append([
+                                license.get('id', 'N/A'),
+                                license.get('licenseType', 'N/A'),
+                                license.get('status', 'N/A'),
+                                license.get('expirationDate', 'N/A')
+                            ])
+                        from tabulate import tabulate
+                        print(tabulate(table_data, headers=["ID", "Type", "Status", "Expiration"], tablefmt="grid"))
+                    else:
+                        print(colored("No licenses found for this organization.", "yellow"))
+            except Exception as e:
+                print(colored(f"Error displaying organization licenses: {str(e)}", "red"))
+                logging.error(f"Error displaying organization licenses: {str(e)}", exc_info=True)
+            input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '5':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# SDK-ENABLED submenu for Network Status
+# ==================================================
+def submenu_network_status_sdk(sdk_wrapper):
+    """Submenu for Network Status using the Meraki SDK"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 21 + "NETWORK STATUS" + " " * 21 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Select Organization".ljust(59) + "│")
+        print("│ 2. Return to Main Menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
+        
+        if choice == '1':
+            try:
+                organization_id = select_organization(sdk_wrapper)
+                if organization_id:
+                    while True:
+                        term_extra.clear_screen()
+                        term_extra.print_ascii_art()
+                        
+                        print("\n")
+                        print("┌" + "─" * 58 + "┐")
+                        print("│" + " " * 18 + "ORGANIZATION STATUS" + " " * 18 + "│")
+                        print("│".ljust(59) + "│")
+                        print("│ 1. View Organization Status".ljust(59) + "│")
+                        print("│ 2. View Organization Networks".ljust(59) + "│")
+                        print("│ 3. View Organization Devices".ljust(59) + "│")
+                        print("│ 4. Return to Organization Menu".ljust(59) + "│")
+                        print("│".ljust(59) + "│")
+                        print("└" + "─" * 58 + "┘")
+                        
+                        sub_choice = input(colored("\nChoose an option [1-4]: ", "cyan"))
+                        
+                        if sub_choice == '1':
+                            # Display organization status
+                            try:
+                                # Get organization details
+                                org_details = sdk_wrapper.dashboard.organizations.getOrganization(organizationId=organization_id)
+                                
+                                if org_details:
+                                    console = Console()
+                                    console.print(f"\n[bold green]Organization Status:[/bold green] {org_details.get('name', 'N/A')}")
+                                    console.print(f"ID: {org_details.get('id', 'N/A')}")
+                                    console.print(f"URL: {org_details.get('url', 'N/A')}")
+                                    
+                                    # Get organization devices
+                                    devices = sdk_wrapper.get_organization_devices(organization_id)
+                                    
+                                    if devices:
+                                        # Count devices by status
+                                        status_counts = {'online': 0, 'offline': 0, 'alerting': 0, 'dormant': 0, 'other': 0}
+                                        
+                                        for device in devices:
+                                            status = device.get('status', 'other').lower()
+                                            if status in status_counts:
+                                                status_counts[status] += 1
+                                            else:
+                                                status_counts['other'] += 1
+                                        
+                                        # Create a table for status summary
+                                        table = Table(show_header=True, header_style="bold green", box=box.SIMPLE)
+                                        table.add_column("Status")
+                                        table.add_column("Count")
+                                        
+                                        table.add_row("[green]Online[/green]", str(status_counts['online']))
+                                        table.add_row("[red]Offline[/red]", str(status_counts['offline']))
+                                        table.add_row("[yellow]Alerting[/yellow]", str(status_counts['alerting']))
+                                        table.add_row("Dormant", str(status_counts['dormant']))
+                                        table.add_row("Other", str(status_counts['other']))
+                                        
+                                        console.print("\n[bold]Device Status Summary:[/bold]")
+                                        console.print(table)
+                                    else:
+                                        console.print("[yellow]No device data available[/yellow]")
+                                else:
+                                    print("Organization details not available")
+                            except Exception as e:
+                                print(colored(f"Error displaying organization status: {str(e)}", "red"))
+                                logging.error(f"Error displaying organization status: {str(e)}", exc_info=True)
+                        elif sub_choice == '2':
+                            # Display organization networks
+                            try:
+                                networks = sdk_wrapper.get_organization_networks(organization_id)
+                                if networks:
+                                    print(colored("\nOrganization Networks:", "cyan"))
+                                    table_data = []
+                                    for network in networks:
+                                        table_data.append([
+                                            network.get('name', 'N/A'),
+                                            network.get('id', 'N/A'),
+                                            network.get('timeZone', 'N/A'),
+                                            ', '.join(network.get('productTypes', []))
+                                        ])
+                                    from tabulate import tabulate
+                                    print(tabulate(table_data, headers=["Name", "ID", "Time Zone", "Product Types"], tablefmt="grid"))
+                                else:
+                                    print(colored("No networks found for this organization.", "yellow"))
+                            except Exception as e:
+                                print(colored(f"Error displaying organization networks: {str(e)}", "red"))
+                                logging.error(f"Error displaying organization networks: {str(e)}", exc_info=True)
+                        elif sub_choice == '3':
+                            # Display organization devices
+                            try:
+                                devices = sdk_wrapper.get_organization_devices(organization_id)
+                                if devices:
+                                    print(colored("\nOrganization Devices:", "cyan"))
+                                    table_data = []
+                                    for device in devices:
+                                        table_data.append([
+                                            device.get('name', 'N/A'),
+                                            device.get('serial', 'N/A'),
+                                            device.get('model', 'N/A'),
+                                            device.get('networkId', 'N/A'),
+                                            device.get('status', 'N/A')
+                                        ])
+                                    from tabulate import tabulate
+                                    print(tabulate(table_data, headers=["Name", "Serial", "Model", "Network ID", "Status"], tablefmt="grid"))
+                                else:
+                                    print(colored("No devices found for this organization.", "yellow"))
+                            except Exception as e:
+                                print(colored(f"Error displaying organization devices: {str(e)}", "red"))
+                                logging.error(f"Error displaying organization devices: {str(e)}", exc_info=True)
+                        elif sub_choice == '4':
+                            break
+                        else:
+                            print(colored("\nInvalid choice. Please try again.", "red"))
+                        
+                        input(colored("\nPress Enter to continue...", "green"))
+                else:
+                    print(colored("No organization selected.", "yellow"))
+                    input(colored("\nPress Enter to continue...", "green"))
+            except Exception as e:
+                print(colored(f"Error: {str(e)}", "red"))
+                logging.error(f"Error in submenu_network_status_sdk: {str(e)}", exc_info=True)
+                input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '2':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# DEFINE the Network Status submenu
+# ==================================================
+def submenu_network_status(api_key):
+    """Submenu for Network Status"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 21 + "NETWORK STATUS" + " " * 21 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Select Organization".ljust(59) + "│")
+        print("│ 2. Return to Main Menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                while True:
+                    term_extra.clear_screen()
+                    term_extra.print_ascii_art()
+                    
+                    print("\n")
+                    print("┌" + "─" * 58 + "┐")
+                    print("│" + " " * 18 + "ORGANIZATION STATUS" + " " * 18 + "│")
+                    print("│".ljust(59) + "│")
+                    print("│ 1. View Organization Status".ljust(59) + "│")
+                    print("│ 2. View Organization Networks".ljust(59) + "│")
+                    print("│ 3. View Organization Devices".ljust(59) + "│")
+                    print("│ 4. Return to Organization Menu".ljust(59) + "│")
+                    print("│".ljust(59) + "│")
+                    print("└" + "─" * 58 + "┘")
+                    
+                    sub_choice = input(colored("\nChoose an option [1-4]: ", "cyan"))
+                    
+                    if sub_choice == '1':
+                        meraki_network.display_organization_status(api_key, organization_id)
+                    elif sub_choice == '2':
+                        meraki_network.display_organization_networks(api_key, organization_id)
+                    elif sub_choice == '3':
+                        meraki_network.display_organization_devices(api_key, organization_id)
+                    elif sub_choice == '4':
+                        break
+                    else:
+                        print(colored("\nInvalid choice. Please try again.", "red"))
+                    
+                    input(colored("\nPress Enter to continue...", "green"))
+            else:
+                print(colored("No organization selected.", "yellow"))
+                input(colored("\nPress Enter to continue...", "green"))
+        elif choice == '2':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# SDK-ENABLED submenu for Device
+# ==================================================
+def submenu_device_sdk(sdk_wrapper):
+    """Submenu for Device using the Meraki SDK"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 23 + "DEVICE MENU" + " " * 23 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Select Organization".ljust(59) + "│")
+        print("│ 2. Return to Main Menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(sdk_wrapper)
+            if organization_id:
+                # Get organization details to display the name
+                organizations = sdk_wrapper.get_organizations()
+                selected_org = next((org for org in organizations if org['id'] == organization_id), None)
+                
+                if selected_org:
+                    term_extra.clear_screen()
+                    term_extra.print_ascii_art()
+                    print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
+                    device_operations_sdk(sdk_wrapper, organization_id)
+        elif choice == '2':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+def submenu_device(api_key):
+    """Submenu for Device operations"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        
+        print("\n")
+        print("┌" + "─" * 58 + "┐")
+        print("│" + " " * 23 + "DEVICE MENU" + " " * 23 + "│")
+        print("│".ljust(59) + "│")
+        print("│ 1. Select Organization".ljust(59) + "│")
+        print("│ 2. Return to Main Menu".ljust(59) + "│")
+        print("│".ljust(59) + "│")
+        print("└" + "─" * 58 + "┘")
+        
+        choice = input(colored("\nChoose a menu option [1-2]: ", "cyan"))
+        
+        if choice == '1':
+            organization_id = select_organization(api_key)
+            if organization_id:
+                # Get organization details to display the name
+                organizations = meraki_api.get_meraki_organizations(api_key)
+                selected_org = next((org for org in organizations if org['id'] == organization_id), None)
+                
+                if selected_org:
+                    term_extra.clear_screen()
+                    term_extra.print_ascii_art()
+                    print(colored(f"\nYou selected {selected_org['name']}.\n", "green"))
+                    device_operations(api_key, organization_id)
+        elif choice == '2':
+            break
+        else:
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+def main_menu_handler(api_key, choice):
+    """Handle main menu choices"""
+    if choice == '1':
+        submenu_mx(api_key)
+    elif choice == '2':
+        submenu_sw_and_ap(api_key)
+    elif choice == '3':
+        submenu_environmental(api_key)
+    elif choice == '4':
+        submenu_organization(api_key)
+    elif choice == '5':
+        network_wide_operations(api_key, select_organization(api_key))
+    elif choice == '6':
+        submenu_device(api_key)
+    elif choice == '7':
+        submenu_network_status(api_key)
+    elif choice == '8':
+        print(colored("\nExiting...", "yellow"))
+        return False
+    else:
+        print(colored("\nInvalid choice. Please try again.", "red"))
+        input(colored("\nPress Enter to continue...", "green"))
+    
+    return True
+
+def network_wide_operations_sdk(sdk_wrapper, organization_id):
+    """Network-wide operations using the Meraki SDK wrapper"""
+    while True:
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        print("\nNetwork-Wide Operations Menu")
         print("=" * 50)
         options = [
-            "View Organization Summary",
-            "View Organization Inventory",
-            "View Organization Licenses",
-            "View Organization Device Status",
-            "View Policy Objects",
-            "View Policy Object Groups",
-            "Return to Main Menu"
+            "View Network Health",
+            "Monitor Network Clients",
+            "View Network Traffic",
+            "View Network Latency Stats",
+            "Monitor Device Performance",
+            "Check Device Uplinks",
+            "Generate Network Diagram",
+            "Launch Web Visualization",
+            "Return to Previous Menu"
         ]
         for index, option in enumerate(options, start=1):
             print(f"{index}. {option}")
 
-        choice = input(colored("\nChoose an option [1-7]: ", "cyan"))
+        choice = input(colored("\nChoose an option [1-9]: ", "cyan"))
         
-        if choice == '7':
+        if choice == '9':
             break
-        elif choice in ['1', '2', '3', '4', '5', '6']:
-            organization_id = meraki_api.select_organization(api_key)
-            if organization_id:
+        elif choice in ['1', '2', '3', '4', '5', '6', '7', '8']:
+            network_id = select_network(sdk_wrapper, organization_id)
+            if network_id:
+                # Get network details for visualization title
+                networks = sdk_wrapper.get_organization_networks(organization_id)
+                network_name = next((n['name'] for n in networks if n['id'] == network_id), "Unknown Network")
+                
                 if choice == '1':
-                    summary = meraki_api.get_organization_summary(api_key, organization_id)
-                    if summary:
-                        print(colored("\nOrganization Summary:", "cyan"))
-                        print(f"Total Networks: {summary.get('networks', 0)}")
-                        print(f"Total Devices: {summary.get('devices', 0)}")
-                        print(f"Total Licenses: {summary.get('licenses', 0)}")
+                    # View Network Health
+                    print(colored(f"\nNetwork Health for {network_name}:", "cyan"))
+                    health_data = sdk_wrapper.get_network_health(network_id)
+                    meraki_network.display_network_health(health_data)
                 elif choice == '2':
-                    inventory = meraki_api.get_organization_inventory(api_key, organization_id)
-                    if inventory:
-                        print(colored("\nOrganization Inventory:", "cyan"))
-                        for device in inventory:
-                            print(f"Name: {device.get('name', 'N/A')}")
-                            print(f"Model: {device.get('model', 'N/A')}")
-                            print(f"Serial: {device.get('serial', 'N/A')}")
-                            print("-" * 30)
+                    # Monitor Network Clients
+                    clients = sdk_wrapper.get_network_clients(network_id, timespan=10800)
+                    meraki_network.display_network_clients(clients)
                 elif choice == '3':
-                    licenses = meraki_api.get_organization_licenses(api_key, organization_id)
-                    if licenses:
-                        print(colored("\nOrganization Licenses:", "cyan"))
-                        for license in licenses:
-                            print(f"Status: {license.get('status', 'N/A')}")
-                            print(f"Type: {license.get('licenseType', 'N/A')}")
-                            print(f"Expires: {license.get('expirationDate', 'N/A')}")
-                            print("-" * 30)
+                    # View Network Traffic
+                    meraki_network.display_network_traffic(sdk_wrapper, network_id)
                 elif choice == '4':
-                    statuses = meraki_api.get_organization_devices_statuses(api_key, organization_id)
-                    if statuses:
-                        print(colored("\nDevice Statuses:", "cyan"))
-                        for status in statuses:
-                            print(f"Name: {status.get('name', 'N/A')}")
-                            print(f"Status: {status.get('status', 'N/A')}")
-                            print(f"Last Reported: {status.get('lastReportedAt', 'N/A')}")
-                            print("-" * 30)
+                    # View Network Latency Stats
+                    latency_stats = sdk_wrapper.get_network_latency_stats(network_id)
+                    meraki_network.display_network_latency(latency_stats)
                 elif choice == '5':
-                    objects = meraki_api.get_organization_policy_objects(api_key, organization_id)
-                    if objects:
-                        print(colored("\nPolicy Objects:", "cyan"))
-                        for obj in objects:
-                            print(f"Name: {obj.get('name', 'N/A')}")
-                            print(f"Category: {obj.get('category', 'N/A')}")
-                            print(f"Type: {obj.get('type', 'N/A')}")
-                            print("-" * 30)
+                    # Monitor Device Performance
+                    devices = sdk_wrapper.get_network_devices(network_id)
+                    if devices:
+                        print(colored(f"\nDevices in {network_name}:", "cyan"))
+                        meraki_network.display_network_devices(devices)
+                        
+                        # Allow selecting a device for detailed performance
+                        print(colored("\nSelect a device to view performance:", "cyan"))
+                        for idx, device in enumerate(devices, 1):
+                            print(f"{idx}. {device.get('name', 'Unknown')} ({device.get('model', 'Unknown')})")
+                        
+                        device_choice = input(colored("\nEnter device number (or press Enter to skip): ", "cyan"))
+                        if device_choice.strip() and device_choice.isdigit():
+                            device_idx = int(device_choice) - 1
+                            if 0 <= device_idx < len(devices):
+                                device = devices[device_idx]
+                                serial = device.get('serial')
+                                if serial:
+                                    performance = sdk_wrapper.get_device_performance(serial)
+                                    meraki_network.display_device_performance(device, performance)
+                                else:
+                                    print(colored("\nNo serial number available for this device.", "yellow"))
+                            else:
+                                print(colored("\nInvalid device selection.", "red"))
+                    else:
+                        print(colored("\nNo devices found in this network.", "yellow"))
                 elif choice == '6':
-                    groups = meraki_api.get_organization_policy_objects_groups(api_key, organization_id)
-                    if groups:
-                        print(colored("\nPolicy Object Groups:", "cyan"))
-                        for group in groups:
-                            print(f"Name: {group.get('name', 'N/A')}")
-                            print(f"Object IDs: {', '.join(group.get('objectIds', []))}")
-                            print("-" * 30)
+                    # Check Device Uplinks
+                    devices = sdk_wrapper.get_network_devices(network_id)
+                    if devices:
+                        print(colored(f"\nDevices with uplink information in {network_name}:", "cyan"))
+                        uplink_devices = [d for d in devices if d.get('supports_uplink', False)]
+                        
+                        if uplink_devices:
+                            for idx, device in enumerate(uplink_devices, 1):
+                                print(f"{idx}. {device.get('name', 'Unknown')} ({device.get('model', 'Unknown')})")
+                            
+                            device_choice = input(colored("\nEnter device number to check uplinks: ", "cyan"))
+                            if device_choice.strip() and device_choice.isdigit():
+                                device_idx = int(device_choice) - 1
+                                if 0 <= device_idx < len(uplink_devices):
+                                    device = uplink_devices[device_idx]
+                                    serial = device.get('serial')
+                                    if serial:
+                                        uplink = sdk_wrapper.get_device_uplink(serial)
+                                        print(colored(f"\nUplink information for {device.get('name')}:", "cyan"))
+                                        if uplink:
+                                            for interface in uplink:
+                                                print(f"Interface: {interface.get('interface', 'N/A')}")
+                                                print(f"Status: {interface.get('status', 'N/A')}")
+                                                print(f"IP: {interface.get('ip', 'N/A')}")
+                                                print("-" * 30)
+                                        else:
+                                            print(colored("No uplink information available.", "yellow"))
+                                    else:
+                                        print(colored("\nNo serial number available for this device.", "yellow"))
+                                else:
+                                    print(colored("\nInvalid device selection.", "red"))
+                        else:
+                            print(colored("\nNo devices with uplink support found in this network.", "yellow"))
+                    else:
+                        print(colored("\nNo devices found in this network.", "yellow"))
+                elif choice == '7':
+                    # Generate enhanced network diagram with device type detection
+                    print(colored("\nGenerating enhanced network diagram...", "cyan"))
+                    try:
+                        # Get network devices
+                        devices = sdk_wrapper.get_network_devices(network_id)
+                        
+                        # Get network clients
+                        clients = sdk_wrapper.get_network_clients(network_id)
+                        
+                        # Try to get topology links from API
+                        links = None
+                        try:
+                            links = sdk_wrapper.get_network_topology_links(network_id)
+                        except Exception as e:
+                            logging.warning(f"Could not get topology links from API, building manually: {str(e)}")
+                        
+                        # Get network details for name
+                        network_details = sdk_wrapper.get_network(network_id)
+                        network_name = network_details.get('name', 'Network')
+                        
+                        # Import the topology building and visualization functions
+                        from utilities.topology_visualizer import build_topology_from_api_data, visualize_network_topology
+                        
+                        # Build the topology with the collected data
+                        topology = build_topology_from_api_data(devices, clients, links)
+                        
+                        # Display summary of the topology
+                        print("\nNetwork Topology Summary:")
+                        print(f"Devices: {len(devices)}")
+                        print(f"Clients: {len(clients)}")
+                        print(f"Connections: {len(topology['links'])}")
+                        
+                        # Display device types
+                        device_types = {}
+                        for node in topology['nodes']:
+                            node_type = node.get('type', 'unknown')
+                            device_types[node_type] = device_types.get(node_type, 0) + 1
+                        
+                        print("\nDevice Types:")
+                        for device_type, count in device_types.items():
+                            print(f"{device_type}: {count}")
+                        
+                        # Display devices
+                        print("\nDevices:")
+                        device_table = []
+                        for device in devices:
+                            device_table.append([
+                                device.get('name', 'Unknown'),
+                                device.get('model', 'Unknown'),
+                                device.get('type', 'Unknown'),
+                                device.get('lanIp', device.get('ip', 'Unknown')),
+                                "Yes" if device.get('uplinkSupported', False) else "No"
+                            ])
+                        
+                        print(tabulate(device_table, headers=['Name', 'Model', 'Type', 'IP Address', 'Uplink Support'], 
+                                      tablefmt='pretty'))
+                        
+                        # Display devices
+                        print("\nClient Devices (sample):")
+                        client_table = []
+                        # Show up to 10 clients
+                        for node in topology['nodes']:
+                            if node.get('type') == 'client':
+                                client_table.append([
+                                    node.get('label', 'Unknown'),
+                                    node.get('client_type', 'Unknown'),
+                                    node.get('ip', 'Unknown'),
+                                    node.get('mac', 'Unknown'),
+                                    node.get('vlan', 'Unknown')
+                                ])
+                        
+                        print(tabulate(client_table, 
+                                      headers=['Name', 'Type', 'IP Address', 'MAC', 'VLAN'], 
+                                      tablefmt='pretty'))
+                        
+                        if len(topology['nodes']) > 10:
+                            print(f"... and {len(topology['nodes']) - 10} more clients")
+                        
+                        # Generate and open the visualization
+                        html_path = visualize_network_topology(topology, network_name)
+                        if html_path:
+                            print(colored(f"\nNetwork topology visualization saved to {html_path}", "green"))
+                            print(colored("The visualization has been opened in your default web browser.", "green"))
+                        else:
+                            print(colored("\nFailed to generate network topology visualization.", "red"))
+                    except Exception as e:
+                        logging.error(f"Error generating network diagram: {str(e)}")
+                        print(colored(f"\nError generating network diagram: {str(e)}", "red"))
+                    
+                    input("\nPress Enter to continue...")
+                elif choice == '8':
+                    # Launch web visualization directly
+                    print(colored("\nLaunching enhanced web visualization...", "cyan"))
+                    topology = sdk_wrapper.get_network_topology(network_id)
+                    if topology:
+                        visualize_network_topology(topology, network_name)
+                        print(colored("\nNetwork visualization opened in your web browser.", "green"))
+                    else:
+                        print(colored("\nNo topology data available for this network.", "yellow"))
                 input(colored("\nPress Enter to continue...", "green"))
         else:
             print(colored("Invalid choice. Please try again.", "red"))

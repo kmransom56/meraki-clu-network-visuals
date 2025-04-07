@@ -177,12 +177,13 @@ def display_organization_devices_statuses(api_key, organization_id, network_id):
 
             add_power_supply_statuses(device, row_data)
 
-            status_value = str(device.get('status', "N/A"))
-            if status_value.lower() == 'online':
+            status_value = device.get('status', 'unknown')
+            
+            if status_value and status_value.lower() == 'online':
                 row_data.append(f"[green]{status_value}[/green]")
-            elif status_value.lower() == 'dormant':
+            elif status_value and status_value.lower() == 'dormant':
                 row_data.append(f"[yellow]{status_value}[/yellow]")
-            elif status_value.lower() == 'offline' or status_value.lower() == 'alerting':
+            elif status_value and (status_value.lower() == 'offline' or status_value.lower() == 'alerting'):
                 row_data.append(f"[red]{status_value}[/red]")
             else:
                 row_data.append(status_value)

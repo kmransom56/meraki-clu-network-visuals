@@ -41,30 +41,80 @@ from termcolor import colored
 def generate_fernet_key(password):
     return Fernet(urlsafe_b64encode(password.encode('utf-8').ljust(32)[:32]))
 
-db_path = os.path.join(os.path.dirname(__file__), '..', 'db', 'cisco_meraki_clu_db.db')
+# Use the settings database in user's home directory for API keys
+db_path = os.path.join(os.path.expanduser("~"), ".cisco_meraki_clu.db")
 
 def save_api_key(api_key, fernet):
-    encrypted_api_key = fernet.encrypt(api_key.encode('utf-8'))
-
+    """Save the API key to the database"""
+    conn = None
     try:
+        # Ensure the database directory exists
+        if not os.path.exists(os.path.dirname(db_path)):
+            os.makedirs(os.path.dirname(db_path))
+        
+        # Encrypt the API key
+        encrypted_api_key = fernet.encrypt(api_key.encode('utf-8'))
+        
         conn = sqlite3.connect(db_path)
-        conn.execute("INSERT OR REPLACE INTO sensitive_data (id, data) VALUES (1, ?)", (encrypted_api_key,))
+        cursor = conn.cursor()
+        
+        # Ensure the sensitive_data table exists
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS sensitive_data (
+            id INTEGER PRIMARY KEY,
+            data BLOB
+        )
+        ''')
+        
+        # Insert or update the API key
+        cursor.execute("INSERT OR REPLACE INTO sensitive_data (id, data) VALUES (1, ?)", (encrypted_api_key,))
         conn.commit()
-        print("API key saved successfully.")
+        print(colored("API key saved successfully.", "green"))
+        return True
     except Exception as e:
-        print(f"An error occurred: {e}")
+        print(colored(f"An error occurred while saving the API key: {e}", "red"))
+        if conn:
+            conn.rollback()
+        return False
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def get_api_key(fernet):
+    """Retrieve the API key from the database"""
+    conn = None
     try:
+        # Check if the database exists
+        if not os.path.exists(db_path):
+            # Create the database directory if it doesn't exist
+            if not os.path.exists(os.path.dirname(db_path)):
+                os.makedirs(os.path.dirname(db_path))
+            return None
+        
         conn = sqlite3.connect(db_path)
-        cursor = conn.execute("SELECT data FROM sensitive_data WHERE id = 1")
+        cursor = conn.cursor()
+        
+        # Check if the sensitive_data table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='sensitive_data'")
+        if not cursor.fetchone():
+            return None
+        
+        # Get the encrypted API key
+        cursor.execute("SELECT data FROM sensitive_data WHERE id = 1")
         encrypted_api_key = cursor.fetchone()
-        api_key = fernet.decrypt(encrypted_api_key[0]) if encrypted_api_key else None
-        return api_key.decode('utf-8') if api_key else None
+        
+        if not encrypted_api_key:
+            return None
+        
+        # Decrypt the API key
+        try:
+            api_key = fernet.decrypt(encrypted_api_key[0])
+            return api_key.decode('utf-8')
+        except Exception as e:
+            print(colored(f"Error decrypting API key: {e}", "red"))
+            return None
     except Exception as e:
-        print(colored("An error occurred while accessing the database: ", "red") + str(e))
+        print(colored(f"An error occurred while accessing the database: {e}", "red"))
         return None
     finally:
         if conn:

@@ -84,7 +84,8 @@ def display_firewall_rules(api_key, network_id, organization_id):
                     rule[cidr_field] = obj_mapping.get(obj_or_grp_id, group_mapping.get(obj_or_grp_id, original_cidr))
 
             row_data = [str(rule.get(key, "")) for key in priority_columns + other_columns]
-            policy = rule.get("policy", "").lower()
+            policy_value = rule.get("policy", "")
+            policy = policy_value.lower() if policy_value else ""
             row_style = "green" if policy == "allow" else "red" if policy == "deny" else ""
             styled_row_data = [Text(cell, style=row_style) for cell in row_data]
             table.add_row(*styled_row_data)

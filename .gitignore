@@ -36,3 +36,5 @@ ENV/
 .encryption_key
 *.pem
 *.log
+.env
+.gitignore

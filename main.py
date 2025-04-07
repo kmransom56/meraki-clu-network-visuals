@@ -1,6 +1,6 @@
 #**************************************************************************
 #   App:         Cisco Meraki CLU                                         *
-#   Version:     1.4                                                      *
+#   Version:     1.5                                                      *
 #   Author:      Matia Zanella                                            *
 #   Description: Cisco Meraki CLU (Command Line Utility) is an essential  *
 #                tool crafted for Network Administrators managing Meraki  *
@@ -38,11 +38,26 @@ from termcolor import colored
 import logging
 import traceback
 import argparse
+from cryptography.fernet import Fernet
+from base64 import urlsafe_b64encode
+from getpass import getpass
 
 from api import meraki_api_manager
 from settings import db_creator
 from utilities import submenu
 from settings import term_extra
+from modules.meraki.meraki_sdk_wrapper import MerakiSDKWrapper
+
+# Configure logging with more detailed output
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('meraki_clu_debug.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 required_packages = {
     "tabulate": "tabulate",
@@ -52,7 +67,8 @@ required_packages = {
     "requests": "requests",
     "rich": "rich",
     "setuptools": "setuptools",
-    "cryptography": "cryptography"
+    "cryptography": "cryptography",
+    "meraki": "meraki"  # Added the official Meraki SDK
 }
 
 missing_packages = []
@@ -100,7 +116,6 @@ if missing_packages:
     print("Please install them using the following command:")
     print(f"{sys.executable} -m pip install " + " ".join(missing_packages))
     sys.exit(1)
-from getpass import getpass
 from datetime import datetime
 from termcolor import colored
 
@@ -127,67 +142,94 @@ logger.addHandler(file_handler)
 # VISUALIZE the Main Menu
 # ==================================================
 def main_menu(fernet):
+    """Display the main menu and handle user input"""
     while True:
         term_extra.clear_screen()
         term_extra.print_ascii_art()
-
+        
+        # Get API key
         api_key = meraki_api_manager.get_api_key(fernet)
-        ipinfo_token = db_creator.get_tools_ipinfo_access_token(fernet)
         
-        options = [
-            "Network wide",
-            "Security & SD-WAN", 
-            "Switch and wireless",
-            "Environmental", 
-            "Organization", 
-            "The Swiss Army Knife", 
-            f"{'Edit Cisco Meraki API Key' if api_key else 'Set Cisco Meraki API Key'}",
-            f"{'Edit IPinfo Token' if ipinfo_token else 'Set IPinfo Token'}",
-            "Test SSL Connection",  
-            "Exit the Command Line Utility"
-        ]
+        # Get API mode (custom or SDK)
+        api_mode = db_creator.get_api_mode(fernet) or 'custom'
         
-        current_year = datetime.now().year
-        footer = f"\033[1mPROJECT PAGE\033[0m\n{current_year} Matia Zanella\nhttps://developer.cisco.com/codeexchange/github/repo/akamura/cisco-meraki-clu/\n\n\033[1mSUPPORT ME\033[0m\n Fuel me with a coffee if you found it useful https://www.paypal.com/paypalme/matiazanella/\n\n\033[1mDISCLAIMER\033[0m\nThis utility is not an official Cisco Meraki product but is based on the official Cisco Meraki API.\nIt is intended to provide Network Administrators with an easy daily companion in the swiss army knife."
-
-        print("\n")
-        print("┌" + "─" * 58 + "┐")
-        print("│".ljust(59) + "│")
-        for index, option in enumerate(options, start=1):
-            print(f"│ {index}. {option}".ljust(59) + "│")
-        print("│".ljust(59) + "│")
-        print("└" + "─" * 58 + "┘")
-
-        term_extra.print_footer(footer)
-        choice = input(colored("Choose a menu option [1-10]: ", "cyan"))
-
+        print("\nMain Menu")
+        print("=" * 50)
+        print("1. Network Status")
+        print("2. Switches and Access Points")
+        print("3. Appliance")
+        print("4. Environmental Monitoring")
+        print("5. Network-Wide Operations")
+        print("6. Swiss Army Knife")
+        print("7. Manage API Key")
+        print("8. Manage IPinfo Token")
+        print(f"9. API Mode: {api_mode.upper()}")
+        print("10. Test SSL Connection")
+        print("11. Exit")
+        
+        choice = input(colored("\nChoose a menu option [1-11]: ", "cyan"))
+        
         if choice == '1':
             if api_key:
-                submenu.submenu_network_wide(api_key)
+                if api_mode == 'sdk':
+                    # Use the SDK wrapper
+                    sdk_wrapper = MerakiSDKWrapper(api_key)
+                    submenu.submenu_network_status_sdk(sdk_wrapper)
+                else:
+                    # Use the custom API implementation
+                    submenu.submenu_network_status(api_key)
             else:
                 print("Please set the Cisco Meraki API key first.")
             input(colored("\nPress Enter to return to the main menu...", "green"))
         elif choice == '2':
             if api_key:
-                submenu.submenu_mx(api_key)
+                if api_mode == 'sdk':
+                    # Use the SDK wrapper
+                    sdk_wrapper = MerakiSDKWrapper(api_key)
+                    submenu.submenu_sw_and_ap_sdk(sdk_wrapper)
+                else:
+                    # Use the custom API implementation
+                    submenu.submenu_sw_and_ap(api_key)
             else:
                 print("Please set the Cisco Meraki API key first.")
             input(colored("\nPress Enter to return to the main menu...", "green"))
         elif choice == '3':
             if api_key:
-                submenu.submenu_sw_and_ap(api_key)
+                if api_mode == 'sdk':
+                    # Use the SDK wrapper
+                    sdk_wrapper = MerakiSDKWrapper(api_key)
+                    submenu.submenu_appliance_sdk(sdk_wrapper)
+                else:
+                    # Use the custom API implementation
+                    submenu.submenu_appliance(api_key)
             else:
                 print("Please set the Cisco Meraki API key first.")
             input(colored("\nPress Enter to return to the main menu...", "green"))
         elif choice == '4':
             if api_key:
-                submenu.submenu_environmental(api_key)
+                if api_mode == 'sdk':
+                    # Use the SDK wrapper
+                    sdk_wrapper = MerakiSDKWrapper(api_key)
+                    submenu.submenu_environmental_sdk(sdk_wrapper)
+                else:
+                    # Use the custom API implementation
+                    submenu.submenu_environmental(api_key)
             else:
                 print("Please set the Cisco Meraki API key first.")
             input(colored("\nPress Enter to return to the main menu...", "green"))
         elif choice == '5':
             if api_key:
-                submenu.submenu_organization(api_key)
+                if api_mode == 'sdk':
+                    # Use the SDK wrapper
+                    sdk_wrapper = MerakiSDKWrapper(api_key)
+                    organization_id = submenu.select_organization(sdk_wrapper)
+                    if organization_id:
+                        submenu.network_wide_operations_sdk(sdk_wrapper, organization_id)
+                else:
+                    # Use the custom API implementation
+                    organization_id = submenu.select_organization(api_key)
+                    if organization_id:
+                        submenu.network_wide_operations(api_key, organization_id)
             else:
                 print("Please set the Cisco Meraki API key first.")
             input(colored("\nPress Enter to return to the main menu...", "green"))
@@ -198,22 +240,81 @@ def main_menu(fernet):
         elif choice == '8':
             manage_ipinfo_token(fernet)
         elif choice == '9':
-            test_ssl_connection(fernet)
+            toggle_api_mode(fernet)
         elif choice == '10':
-            term_extra.clear_screen()
-            term_extra.print_ascii_art()
-            print("\nThank you for using the Cisco Meraki Command Line Utility!")
-            print("Exiting the program. Goodbye, and have a wonderful day!")
-            print("\n \033[1mCONTRIBUTE\033[0m\nThis is not just a project; it's a community effort.\nI'm inviting you to be a part of this journey.\nStar it, fork it, contribute, or just play around with it.\nEvery feedback, issue, or pull request is an opportunity for us to make this tool even more amazing.\nYou are more than welcome to discuss it on GitHub https://github.com/akamura/cisco-meraki-clu/discussions")
-            print("\n" * 2)
-            break
+            test_ssl_connection(fernet)
+        elif choice == '11':
+            print(colored("\nThank you for using Cisco Meraki CLU!", "green"))
+            sys.exit(0)
         else:
-            print(colored("Invalid choice. Please try again.", "red"))
+            print(colored("\nInvalid choice. Please try again.", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+
+
+# ==================================================
+# TOGGLE API Mode (SDK or Custom)
+# ==================================================
+def toggle_api_mode(fernet):
+    """Toggle between custom API and SDK mode"""
+    try:
+        current_mode = db_creator.get_api_mode(fernet) or 'custom'
+        
+        term_extra.clear_screen()
+        term_extra.print_ascii_art()
+        print("\nAPI Mode Selection")
+        print("=" * 50)
+        print(f"Current API Mode: {current_mode.upper()}")
+        print("\nAvailable Modes:")
+        print("1. Custom API (Default, with enhanced SSL handling for Windows/Zscaler)")
+        print("2. Meraki SDK (Official Python SDK)")
+        print("3. Return to Main Menu")
+        
+        choice = input(colored("\nSelect API Mode [1-3]: ", "cyan"))
+        
+        if choice == '1':
+            if current_mode != 'custom':
+                db_creator.set_api_mode(fernet, 'custom')
+                print(colored("\nAPI Mode set to Custom API.", "green"))
+            else:
+                print(colored("\nAPI Mode is already set to Custom API.", "yellow"))
+        elif choice == '2':
+            # Check if Meraki SDK is installed
+            try:
+                import meraki
+                if current_mode != 'sdk':
+                    db_creator.set_api_mode(fernet, 'sdk')
+                    print(colored("\nAPI Mode set to Meraki SDK.", "green"))
+                else:
+                    print(colored("\nAPI Mode is already set to Meraki SDK.", "yellow"))
+            except ImportError:
+                print(colored("\nMeraki SDK not found. Installing...", "yellow"))
+                try:
+                    import subprocess
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", "meraki"])
+                    if current_mode != 'sdk':
+                        db_creator.set_api_mode(fernet, 'sdk')
+                    print(colored("\nMeraki SDK installed and API Mode set to Meraki SDK.", "green"))
+                except Exception as e:
+                    print(colored(f"\nError installing Meraki SDK: {str(e)}", "red"))
+                    print(colored("Please install it manually using: pip install meraki", "red"))
+                    print(colored("API Mode remains unchanged.", "yellow"))
+        elif choice == '3':
+            return
+        else:
+            print(colored("\nInvalid choice. API Mode remains unchanged.", "red"))
+        
+        input(colored("\nPress Enter to continue...", "green"))
+    except Exception as e:
+        print(colored(f"\nError toggling API mode: {str(e)}", "red"))
+        logger.error(f"Error toggling API mode: {str(e)}", exc_info=True)
+        input(colored("\nPress Enter to continue...", "green"))
+
 
 def manage_api_key(fernet):
     term_extra.clear_screen()
     api_key = input("\nEnter the Cisco Meraki API Key: ")
     meraki_api_manager.save_api_key(api_key, fernet)
+
 
 def manage_ipinfo_token(fernet):
     term_extra.clear_screen()
@@ -230,6 +331,7 @@ def manage_ipinfo_token(fernet):
         print(colored("\nIPinfo access token saved successfully.", "green"))
     else:
         print(colored("No token entered. No changes made.", "red"))
+
 
 def initialize_api_key():
     """Initialize and manage the Meraki API key"""
@@ -268,6 +370,7 @@ def initialize_api_key():
     print("   set MERAKI_DASHBOARD_API_KEY=your-api-key")
     print("\nNote: After setting an environment variable, you may need to restart your command prompt.")
     return None
+
 
 def test_ssl_connection(fernet):
     """
@@ -334,37 +437,67 @@ def test_ssl_connection(fernet):
     term_extra.print_footer(footer)
     input(colored("\nPress Enter to return to the main menu...", "green"))
 
+
 def main():
     """Main function to run the Cisco Meraki CLU"""
     try:
-        # Initialize API key
+        # Check if the database exists
+        db_path = os.path.join(os.path.expanduser("~"), ".cisco_meraki_clu.db")
+        
+        # Initialize API key from command line arguments if provided
         api_key = initialize_api_key()
-        if not api_key:
-            print("Please set your Meraki API key using one of these methods:")
-            print("1. Set MERAKI_DASHBOARD_API_KEY environment variable")
-            print("2. Run the program with --set-key YOUR_API_KEY")
-            return
-
-        db_path = 'db/cisco_meraki_clu_db.db'
-        if not db_creator.database_exists(db_path):
+        
+        # Check if the database exists
+        if not os.path.exists(db_path):
             os.system('cls')  # Clears the terminal screen.
             term_extra.print_ascii_art()
-            if db_creator.prompt_create_database():
-                db_password = getpass(colored("\nEnter a password for encrypting the database: ", "green"))
-                fernet = db_creator.generate_fernet_key(db_password)
-                db_creator.update_database_schema(db_path, db_password)  # Update the database schema after creation.
+            print(colored("\n\nWelcome to Cisco Meraki Command Line Utility!", "green"))
+            print(colored("This program requires a database to store your settings and API keys securely.", "green"))
+            create_db = input(colored("\nDo you want to create the database now? (yes/no): ", "cyan")).strip().lower()
+            
+            if create_db == 'yes':
+                db_password = getpass(colored("\nPlease create a password for database encryption: ", "green"))
+                confirm_password = getpass(colored("Please confirm your password: ", "green"))
+                
+                if db_password == confirm_password:
+                    fernet = db_creator.generate_fernet_key(db_password)
+                    
+                    # Create the database directory if it doesn't exist
+                    db_dir = os.path.dirname(db_path)
+                    if not os.path.exists(db_dir):
+                        os.makedirs(db_dir)
+                    
+                    # Create the database with the necessary tables
+                    db_creator.create_cisco_meraki_clu_db(db_path, fernet)
+                    
+                    print(colored("\nDatabase created successfully!", "green"))
+                    
+                    # If API key was provided via command line, save it now
+                    if api_key:
+                        meraki_api_manager.save_api_key(api_key, fernet)
+                        print(colored("API key saved successfully!", "green"))
+                    
+                    main_menu(fernet)
+                else:
+                    print(colored("\nPasswords do not match. Please try again.", "red"))
+                    exit()
             else:
                 print(colored("Database creation cancelled. Exiting program.", "yellow"))
                 exit()
         else:
+            # Database exists, ask for password
             os.system('cls')  # Clears the terminal screen.
             term_extra.print_ascii_art()
-            db_password = getpass(colored("\n\nWelcome to Cisco Meraki Command Line Utility!\nThis program contains sensitive information. Please insert your password to continue: ", "green"))
+            db_password = getpass(colored("\n\nWelcome to Cisco Meraki Command Line Utility!\nPlease enter your database password to continue: ", "green"))
             fernet = db_creator.generate_fernet_key(db_password)
+            
+            # If API key was provided via command line, save it now
+            if api_key:
+                meraki_api_manager.save_api_key(api_key, fernet)
+                print(colored("API key saved successfully!", "green"))
+                input(colored("\nPress Enter to continue...", "green"))
 
-        # At this point, the database exists, so update the schema as needed.
-        db_creator.update_database_schema(db_path, db_password)  # Ensure the schema is updated for existing databases too.
-
+        # At this point, the database exists, so proceed to the main menu
         main_menu(fernet)
 
     except Exception as e:
