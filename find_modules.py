@@ -1,6 +1,8 @@
 import os
 import sys
 import importlib
+import subprocess
+import pkg_resources
 
 def find_imported_modules(directory):
     """Find all imported modules in Python files in a directory."""
@@ -48,9 +50,47 @@ def is_standard_library(module_name):
             return False
         
         # If the module is in the standard library, its location will not contain 'site-packages'
-        return 'site-packages' not in spec.origin
+        return spec and spec.origin and 'site-packages' not in spec.origin
     except (ImportError, AttributeError, ValueError):
         return False
+
+def get_installed_version(module_name):
+    """Get the installed version of a module."""
+    try:
+        # Try using pkg_resources first
+        try:
+            return pkg_resources.get_distribution(module_name).version
+        except (pkg_resources.DistributionNotFound, ModuleNotFoundError):
+            pass
+        
+        # Try using pip list as a fallback
+        try:
+            result = subprocess.run(
+                [sys.executable, '-m', 'pip', 'show', module_name],
+                capture_output=True,
+                text=True,
+                check=True
+            )
+            for line in result.stdout.split('\n'):
+                if line.startswith('Version:'):
+                    return line.split(':', 1)[1].strip()
+        except subprocess.CalledProcessError:
+            pass
+        
+        # Try importing the module and checking its version
+        try:
+            module = importlib.import_module(module_name)
+            if hasattr(module, '__version__'):
+                return module.__version__
+            if hasattr(module, 'version'):
+                return module.version
+        except (ImportError, AttributeError):
+            pass
+        
+        return None
+    except Exception as e:
+        print(f"Error getting version for {module_name}: {e}")
+        return None
 
 def generate_requirements(directory):
     """Generate requirements.txt based on imports."""
@@ -64,17 +104,79 @@ def generate_requirements(directory):
             third_party_modules.append(module)
     
     print(f"Found {len(third_party_modules)} third-party modules:")
-    for module in sorted(third_party_modules):
-        print(f"- {module}")
     
-    # Write to requirements.txt
+    # Map module names to package names if different
+    package_mapping = {
+        'PIL': 'Pillow',
+        'yaml': 'PyYAML',
+        'bs4': 'beautifulsoup4',
+        'sklearn': 'scikit-learn',
+        'cv2': 'opencv-python',
+        # Add more mappings as needed
+    }
+    
+    # Get versions and write to requirements.txt
     with open('requirements.txt', 'w') as f:
         for module in sorted(third_party_modules):
-            f.write(f"{module}\n")
+            package_name = package_mapping.get(module, module)
+            version = get_installed_version(package_name)
+            
+            if version:
+                req_line = f"{package_name}=={version}"
+                print(f"- {req_line}")
+                f.write(f"{req_line}\n")
+            else:
+                req_line = package_name
+                print(f"- {req_line} (version unknown)")
+                f.write(f"{req_line}\n")
     
-    print(f"\nGenerated requirements.txt with {len(third_party_modules)} packages")
+    # Add common Meraki CLI dependencies if not already detected
+    meraki_deps = [
+        'meraki',
+        'tabulate',
+        'pathlib',
+        'termcolor',
+        'pysqlcipher3',
+        'rich',
+        'setuptools',
+        'dnspython',
+        'ipinfo',
+        'scapy',
+        'numpy',
+        'ipaddress',
+        'PyYAML',
+        'click',
+        'requests',
+        'cryptography'
+    ]
+    
+    # Check if any common dependencies are missing
+    with open('requirements.txt', 'r') as f:
+        existing_packages = [line.split('==')[0].strip() for line in f.readlines()]
+    
+    missing_packages = []
+    for dep in meraki_deps:
+        if dep not in existing_packages and dep.lower() not in [p.lower() for p in existing_packages]:
+            missing_packages.append(dep)
+    
+    # Append missing common dependencies
+    if missing_packages:
+        print("\nAdding common Meraki CLI dependencies:")
+        with open('requirements.txt', 'a') as f:
+            for package in missing_packages:
+                version = get_installed_version(package)
+                if version:
+                    req_line = f"{package}=={version}"
+                    print(f"- {req_line}")
+                    f.write(f"{req_line}\n")
+                else:
+                    req_line = package
+                    print(f"- {req_line} (version unknown)")
+                    f.write(f"{req_line}\n")
+    
+    print(f"\nGenerated requirements.txt with all detected packages and common dependencies")
 
 if __name__ == "__main__":
     # Use current directory
     project_dir = "."
-    generate_requirements(project_dir),
+    generate_requirements(project_dir)
