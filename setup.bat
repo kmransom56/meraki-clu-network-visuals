@@ -18,7 +18,7 @@ echo Python is installed. Installing required packages...
 echo.
 
 REM Install required packages
-pip install -r requirements.txt --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+uv pip install -r requirements.txt --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
 
 if %errorlevel% neq 0 (
     echo Failed to install required packages.

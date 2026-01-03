@@ -210,15 +210,8 @@ def main():
         logging.info("   - Firewall rules for api.meraki.com")
         logging.info("   - Zscaler configuration")
 
-if __name__ == "__main__":
-    main()import os
-import sys
-import requests
-import logging
-import urllib3
-from pathlib import Path
-import tempfile
-import subprocess
+
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -423,15 +416,7 @@ def main():
         logging.info("   - Firewall rules for api.meraki.com")
         logging.info("   - Zscaler configuration")
 
-if __name__ == "__main__":
-    main()import os
-import sys
-import requests
-import logging
-import urllib3
-from pathlib import Path
-import tempfile
-import subprocess
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 

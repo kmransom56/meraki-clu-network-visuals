@@ -512,6 +512,114 @@ def get_network_name(api_key, network_id):
         logging.error(f"Error getting network name: {str(e)}")
         return "Unknown Network"
 
+def get_network_traffic(api_key, network_id, timespan=3600):
+    """
+    Get network traffic data
+    
+    Args:
+        api_key (str): Meraki API key
+        network_id (str): Network ID
+        timespan (int): Timespan in seconds for which traffic is fetched (default: 3600 = 1 hour)
+        
+    Returns:
+        list: List of traffic flow dictionaries with application, destination, protocol, and usage data
+    """
+    try:
+        params = {"timespan": timespan}
+        traffic_data = make_meraki_request(api_key, f"/networks/{network_id}/traffic", params=params)
+        
+        # Transform the response to match expected format
+        if isinstance(traffic_data, list):
+            return traffic_data
+        elif isinstance(traffic_data, dict):
+            # If the API returns a dict, extract the flows
+            return traffic_data.get('flows', []) if 'flows' in traffic_data else []
+        else:
+            return []
+    except Exception as e:
+        logging.warning(f"Could not get network traffic: {str(e)}")
+        return []
+
+def get_network_latency_stats(api_key, network_id, timespan=3600):
+    """
+    Get network latency statistics
+    
+    Args:
+        api_key (str): Meraki API key
+        network_id (str): Network ID
+        timespan (int): Timespan in seconds for which latency is fetched (default: 3600 = 1 hour)
+        
+    Returns:
+        list: List of latency statistics dictionaries
+    """
+    try:
+        params = {"timespan": timespan}
+        latency_data = make_meraki_request(api_key, f"/networks/{network_id}/latencyStats", params=params)
+        
+        if isinstance(latency_data, list):
+            return latency_data
+        elif isinstance(latency_data, dict):
+            return [latency_data] if latency_data else []
+        else:
+            return []
+    except Exception as e:
+        logging.warning(f"Could not get network latency stats: {str(e)}")
+        return []
+
+def get_device_performance(api_key, serial):
+    """
+    Get device performance metrics
+    
+    Args:
+        api_key (str): Meraki API key
+        serial (str): Device serial number
+        
+    Returns:
+        dict: Device performance metrics (CPU, memory, disk usage)
+    """
+    try:
+        device_data = make_meraki_request(api_key, f"/devices/{serial}")
+        
+        # Extract performance metrics from device data
+        performance = {}
+        if isinstance(device_data, dict):
+            # Meraki API doesn't directly provide CPU/memory/disk, so we'll return available metrics
+            performance = {
+                'status': device_data.get('status', 'N/A'),
+                'lastReportedAt': device_data.get('lastReportedAt', 'N/A'),
+                'lanIp': device_data.get('lanIp', 'N/A'),
+                'firmware': device_data.get('firmware', 'N/A'),
+                'model': device_data.get('model', 'N/A')
+            }
+        return performance
+    except Exception as e:
+        logging.warning(f"Could not get device performance: {str(e)}")
+        return {}
+
+def get_device_uplink(api_key, serial):
+    """
+    Get device uplink information
+    
+    Args:
+        api_key (str): Meraki API key
+        serial (str): Device serial number
+        
+    Returns:
+        list: List of uplink interface dictionaries
+    """
+    try:
+        uplink_data = make_meraki_request(api_key, f"/devices/{serial}/uplink")
+        
+        if isinstance(uplink_data, list):
+            return uplink_data
+        elif isinstance(uplink_data, dict):
+            return [uplink_data] if uplink_data else []
+        else:
+            return []
+    except Exception as e:
+        logging.warning(f"Could not get device uplink: {str(e)}")
+        return []
+
 def get_network_topology(api_key, network_id):
     """
     Get network topology data using the dedicated Meraki topology endpoint
@@ -531,7 +639,7 @@ def get_network_topology(api_key, network_id):
     
     # Get topology links directly from Meraki API
     try:
-        topology_links = make_meraki_request(api_key, f"/networks/{network_id}/topology/links")
+        topology_links = make_meraki_request(api_key, f"/networks/{network_id}/topology/linkLayer")
     except Exception as e:
         logging.warning(f"Could not get topology links from API, building manually: {str(e)}")
         topology_links = []
@@ -754,7 +862,7 @@ def get_network_topology_links(api_key, network_id):
     Returns:
         list: List of topology links
     """
-    endpoint = f"/networks/{network_id}/topology/links"
+    endpoint = f"/networks/{network_id}/topology/linkLayer"
     return make_meraki_request(api_key, endpoint)
 
 # ==================================================
@@ -819,6 +927,7 @@ def make_meraki_request(api_key, endpoint, headers=None, params=None, max_retrie
     
     # Special handling for known endpoints that might return 404 for some devices
     is_uplink_endpoint = '/uplink' in endpoint
+    is_topology_linklayer_endpoint = '/topology/linkLayer' in endpoint
     
     # Clear any conflicting environment variables
     if 'REQUESTS_CA_BUNDLE' in os.environ:
@@ -856,6 +965,13 @@ def make_meraki_request(api_key, endpoint, headers=None, params=None, max_retrie
                 logging.warning(f"Device {device_serial} does not support uplink information")
                 return []  # Return empty list for uplink endpoint
             
+            # Handle 404 errors for topology/linkLayer endpoint specially (not available for all networks)
+            # Don't retry 404s for this endpoint - it's expected for some network types
+            if response.status_code == 404 and is_topology_linklayer_endpoint:
+                logging.debug("Topology linkLayer endpoint not available for this network, will use fallback method")
+                # Raise immediately to skip retries - this will be caught by get_network_topology
+                response.raise_for_status()  # This will raise HTTPError with 404
+            
             # Check for successful response
             response.raise_for_status()
             
@@ -881,7 +997,20 @@ def make_meraki_request(api_key, endpoint, headers=None, params=None, max_retrie
             logging.warning("SSL verification failed, retrying without verification")
             verify = False
             
+        except requests.exceptions.HTTPError as e:
+            # Special handling for 404 on topology/linkLayer endpoint - don't retry
+            if is_topology_linklayer_endpoint and e.response is not None and e.response.status_code == 404:
+                logging.debug("Topology linkLayer endpoint not available, skipping retries")
+                raise  # Re-raise immediately without retrying
+            # For other HTTP errors, fall through to RequestException handling below
+            # (HTTPError is a subclass of RequestException)
+            
         except requests.exceptions.RequestException as e:
+            # Skip retries for 404 on topology/linkLayer (caught as RequestException)
+            if is_topology_linklayer_endpoint and "404" in str(e):
+                logging.debug("Topology linkLayer endpoint not available, skipping retries")
+                raise  # Re-raise immediately without retrying
+                
             logging.error(f"Request failed: {str(e)}")
             
             # If this is the last attempt, re-raise

@@ -62,3 +62,37 @@ The application implements a robust SSL verification strategy:
 ## Requirements
 - Python 3.7+
 - See requirements.txt for dependencies# cisco-meraki-clu
+
+Dependency Governance & Drift Protection
+This project includes a full, automated dependency‑governance workflow designed to ensure:
+
+deterministic builds
+
+reproducible environments
+
+drift detection before merge
+
+runtime validation
+
+rollback safety
+
+compliance‑ready signed artifacts
+
+Workflow Overview
+Stage	Description
+1. Pre‑Commit Drift Check	Prevents developers from committing code that introduces new imports without updating requirements.txt.
+2. CI Regeneration	CI regenerates requirements.txt using pipreqs, reinstalls dependencies, and freezes a deterministic requirements.lock.
+3. Drift Detection	CI compares the regenerated lock file to the committed version. Any mismatch fails the pipeline.
+4. Runtime Validation	FastAPI validates required imports at startup and exposes a /admin/dependencies endpoint for live drift monitoring.
+5. Rollback Workflow	A PowerShell script restores the last known‑good dependency set.
+6. Signed Artifacts	CI signs the requirements.lock file for compliance and auditing.
+Key Files
+Code
+Makefile                     → Automated dependency regeneration
+.pre-commit-config.yaml      → Pre-commit drift prevention
+.github/workflows/           → CI dependency audit pipeline
+scripts/bootstrap.ps1        → Environment bootstrap
+scripts/rollback_requirements.ps1 → Rollback workflow
+scripts/sign_requirements.py → Signed artifact generator
+api/dependency_dashboard.py  → JSON emitter for admin panel
+api/dependency_validator.py  → Runtime dependency validator# meraki-clu-network-visuals

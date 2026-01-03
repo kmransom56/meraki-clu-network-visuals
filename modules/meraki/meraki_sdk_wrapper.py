@@ -520,6 +520,32 @@ class MerakiSDKWrapper:
             logging.error(f"Error getting clients for network {network_id}: {str(e)}")
             return []
     
+    def get_network_traffic(self, network_id, timespan=3600):
+        """
+        Get network traffic data.
+        
+        Args:
+            network_id (str): Network ID
+            timespan (int): Timespan in seconds for which traffic is fetched (default: 3600 = 1 hour)
+            
+        Returns:
+            list: List of traffic flow dictionaries with application, destination, protocol, and usage data
+        """
+        try:
+            traffic_data = self.dashboard.networks.getNetworkTraffic(network_id, timespan=timespan)
+            
+            # Transform the response to match expected format
+            if isinstance(traffic_data, list):
+                return traffic_data
+            elif isinstance(traffic_data, dict):
+                # If the API returns a dict, extract the flows
+                return traffic_data.get('flows', []) if 'flows' in traffic_data else []
+            else:
+                return []
+        except Exception as e:
+            logging.warning(f"Could not get network traffic: {str(e)}")
+            return []
+    
     def get_network_topology(self, network_id):
         """
         Get network topology data.
@@ -539,7 +565,7 @@ class MerakiSDKWrapper:
             
             # Get topology links directly from Meraki API
             try:
-                topology_links = self.dashboard.networks.getNetworkTopologyLinks(network_id)
+                topology_links = self.dashboard.networks.getNetworkTopologyLinkLayer(network_id)
             except Exception as e:
                 logging.warning(f"Could not get topology links from API, building manually: {str(e)}")
                 topology_links = []

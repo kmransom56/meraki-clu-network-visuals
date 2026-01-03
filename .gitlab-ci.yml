@@ -1,0 +1,33 @@
+stages:
+  - audit
+  - sign
+  - artifacts
+
+dependency_audit:
+  stage: audit
+  image: python:3.11
+  script:
+    - pip install pipreqs
+    - python -m venv .venv
+    - . .venv/bin/activate
+    - pip install -r requirements.txt
+    - pipreqs . --force --encoding=utf-8 --ignore .venv,scripts,tests
+    - pip install -r requirements.txt
+    - pip freeze > requirements.lock
+    - git diff --exit-code requirements.lock || (echo "Dependency drift detected" && exit 1)
+    - pip check
+  artifacts:
+    paths:
+      - requirements.lock
+
+sign_artifact:
+  stage: sign
+  image: python:3.11
+  script:
+    - python sign_requirements.py
+  dependencies:
+    - dependency_audit
+  artifacts:
+    paths:
+      - requirements.lock
+      - requirements.lock.sig.json

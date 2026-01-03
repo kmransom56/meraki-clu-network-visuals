@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dependency Status</title>
+    <style>
+        body { font-family: Arial; margin: 40px; }
+        .ok { color: green; font-weight: bold; }
+        .drift { color: red; font-weight: bold; }
+        table { border-collapse: collapse; margin-top: 20px; }
+        th, td { padding: 8px 12px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <h1>Dependency Drift Status</h1>
+
+    <p>Status:
+        {% if status == "ok" %}
+            <span class="ok">No Drift Detected</span>
+        {% else %}
+            <span class="drift">Drift Detected</span>
+        {% endif %}
+    </p>
+
+    <h2>Missing Packages</h2>
+    <table>
+        {% for pkg in missing %}
+        <tr><td>{{ pkg }}</td></tr>
+        {% endfor %}
+        {% if missing|length == 0 %}
+        <tr><td>None</td></tr>
+        {% endif %}
+    </table>
+
+    <h2>Extra Packages</h2>
+    <table>
+        {% for pkg in extra %}
+        <tr><td>{{ pkg }}</td></tr>
+        {% endfor %}
+        {% if extra|length == 0 %}
+        <tr><td>None</td></tr>
+        {% endif %}
+    </table>
+</body>
+</html>
