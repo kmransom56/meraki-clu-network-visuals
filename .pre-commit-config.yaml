@@ -4,6 +4,6 @@ repos:
     hooks:
       - id: dependency-drift-check
         name: Dependency Drift Check
-        entry: bash -c 'pipreqs . --force --encoding=utf-8 --ignore .venv,scripts,tests && git diff --exit-code requirements.txt'
+        entry: bash scripts/check_dependency_drift.sh
         language: system
         pass_filenames: false
