@@ -775,10 +775,13 @@ def network_wide_operations(api_key, organization_id):
                                 device = devices[int(device_choice) - 1]
                                 performance = meraki_api.get_device_performance(api_key, device['serial'])
                                 if performance:
-                                    print(colored(f"\nPerformance stats for {device.get('name')}:", "cyan"))
-                                    print(f"CPU: {performance.get('cpu', 'N/A')}%")
-                                    print(f"Memory: {performance.get('memory', 'N/A')}%")
-                                    print(f"Disk: {performance.get('disk', 'N/A')}%")
+                                    print(colored(f"\nDevice information for {device.get('name')}:", "cyan"))
+                                    print(f"Status: {performance.get('status', 'N/A')}")
+                                    print(f"Last Reported: {performance.get('lastReportedAt', 'N/A')}")
+                                    print(f"LAN IP: {performance.get('lanIp', 'N/A')}")
+                                    print(f"Firmware: {performance.get('firmware', 'N/A')}")
+                                    print(f"Model: {performance.get('model', 'N/A')}")
+                                    print(colored("\nNote: CPU, Memory, and Disk metrics are not available from Meraki API.", "yellow"))
                                 else:
                                     print(colored("\nNo performance data available for this device.", "yellow"))
                             else:

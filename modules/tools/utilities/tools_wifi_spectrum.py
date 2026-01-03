@@ -166,7 +166,7 @@ def display_spectrum_analysis(networks):
             if channel not in channels_24:
                 channels_24[channel] = []
             channels_24[channel].append({"SSID": ssid, "Signal": signal})
-        elif "5" in band or int(channel) > 14 if channel.isdigit() else False:
+        elif "5" in band or (channel.isdigit() and int(channel) > 14):
             if channel not in channels_5:
                 channels_5[channel] = []
             channels_5[channel].append({"SSID": ssid, "Signal": signal})

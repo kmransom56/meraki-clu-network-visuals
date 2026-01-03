@@ -63,10 +63,6 @@ def install(package):
     subprocess.check_call([sys.executable, "-m", "pip", "install", package])
 
 
-try:
-    import fastapi
-except ImportError:
-    install("fastapi")
 # Configure logging with more detailed output
 logging.basicConfig(
     level=logging.DEBUG,
