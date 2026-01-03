@@ -51,18 +51,40 @@ def check_dnsbl(ip_address, services, progress):
     """Check if an IP address is listed in the specified DNSBL services."""
     reversed_ip = reverse_ip(ip_address)
     results = {}
+    
+    # Configure DNS resolver with timeout
+    resolver = dns.resolver.Resolver()
+    resolver.timeout = 3  # 3 second timeout
+    resolver.lifetime = 3  # 3 second lifetime
 
     for service_name, service_domain in progress.track(services.items(), description="☕ Time to take a coffee."):
         query = f"{reversed_ip}.{service_domain}"
         try:
-            dns.resolver.resolve(query, 'A')
+            resolver.resolve(query, 'A')
             results[service_name] = colored("Listed: YES", "red")
         except dns.resolver.NoAnswer:
             results[service_name] = colored("Listed: NO [NO ANSWER]", "green")
         except dns.resolver.NXDOMAIN:
             results[service_name] = colored("Listed: NO", "green")
+        except dns.resolver.Timeout:
+            results[service_name] = colored("Error: Timeout", "yellow")
+        except dns.resolver.NoNameservers:
+            results[service_name] = colored("Error: DNS server failure", "yellow")
+        except dns.exception.DNSException as e:
+            # Extract just the error type for cleaner messages
+            error_type = type(e).__name__
+            if "timeout" in str(e).lower() or "lifetime" in str(e).lower():
+                results[service_name] = colored("Error: Timeout", "yellow")
+            elif "servfail" in str(e).lower():
+                results[service_name] = colored("Error: Server failure", "yellow")
+            else:
+                results[service_name] = colored(f"Error: {error_type}", "yellow")
         except Exception as e:
-            results[service_name] = colored(f"Error: {e}", "yellow")
+            # Generic error - show shortened message
+            error_msg = str(e)
+            if len(error_msg) > 50:
+                error_msg = error_msg[:47] + "..."
+            results[service_name] = colored(f"Error: {error_msg}", "yellow")
     return results
 
 def main():
@@ -84,11 +106,32 @@ def main():
     with Progress() as progress:
         results = check_dnsbl(ip_to_check, services_to_check, progress)
 
+    # Count results
+    listed_count = sum(1 for r in results.values() if "Listed: YES" in str(r))
+    not_listed_count = sum(1 for r in results.values() if "Listed: NO" in str(r))
+    error_count = sum(1 for r in results.values() if "Error:" in str(r))
+    
     for service, result in results.items():
         table.add_row(service, result)
 
     console.print(table)
-    input("Press Enter to return to the submenu...")
+    
+    # Print summary
+    console.print(f"\n[bold]Summary:[/bold]")
+    console.print(f"  [red]Listed: {listed_count}[/red]")
+    console.print(f"  [green]Not Listed: {not_listed_count}[/green]")
+    console.print(f"  [yellow]Errors: {error_count}[/yellow]")
+    console.print(f"  [dim]Total Services: {len(results)}[/dim]")
+    
+    if listed_count > 0:
+        console.print(f"\n[bold red]⚠ WARNING: IP address is listed in {listed_count} blacklist(s)![/bold red]")
+    elif error_count > 0:
+        console.print(f"\n[yellow]Note: {error_count} service(s) returned errors (timeouts or DNS issues).[/yellow]")
+        console.print("[dim]This is normal - some DNSBL services may be slow or unreachable.[/dim]")
+    else:
+        console.print(f"\n[green]✓ IP address is not listed in any checked blacklists.[/green]")
+    
+    input("\nPress Enter to return to the submenu...")
 
 
 if __name__ == "__main__":

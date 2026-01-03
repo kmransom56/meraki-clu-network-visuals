@@ -60,6 +60,13 @@ from modules.tools.dnsbl import dnsbl_check
 from modules.tools.utilities import tools_ipcheck
 from modules.tools.utilities import tools_passgen
 from modules.tools.utilities import tools_subnetcalc
+from modules.tools.utilities import tools_mtu
+from modules.tools.utilities import tools_wifi_spectrum
+from modules.tools.utilities import tools_wifi_adapter
+from modules.tools.utilities import tools_wifi_neighbors
+from modules.tools.utilities import tools_whois
+from modules.tools.utilities import tools_nslookup
+from modules.tools.utilities import tools_nmap
 
 from settings import term_extra
 from utilities.topology_visualizer import visualize_network_topology
@@ -687,72 +694,129 @@ def network_wide_operations(api_key, organization_id):
                         break
                 
                 if choice == '1':
-                    health = meraki_api.get_network_health(api_key, network_id)
-                    if health:
-                        print(colored("\nNetwork Health Status:", "cyan"))
-                        for component, status in health.items():
-                            print(f"{component}: {status}")
+                    try:
+                        health = meraki_api.get_network_health(api_key, network_id)
+                        if health:
+                            print(colored("\nNetwork Health Status:", "cyan"))
+                            if isinstance(health, dict):
+                                for component, status in health.items():
+                                    print(f"{component}: {status}")
+                            else:
+                                print(health)
+                        else:
+                            print(colored("\nNo health data available.", "yellow"))
+                    except Exception as e:
+                        print(colored(f"\nError getting network health: {str(e)}", "red"))
+                        logging.error(f"Error in network health: {str(e)}", exc_info=True)
+                    input(colored("\nPress Enter to continue...", "green"))
                 elif choice == '2':
-                    clients = meraki_api.get_network_clients(api_key, network_id)
-                    if clients:
-                        print(colored("\nActive Network Clients:", "cyan"))
-                        for client in clients:
-                            print(f"Description: {client.get('description', 'N/A')}")
-                            print(f"IP: {client.get('ip', 'N/A')}")
-                            print(f"MAC: {client.get('mac', 'N/A')}")
-                            print(f"Status: {client.get('status', 'N/A')}")
-                            print("-" * 30)
+                    try:
+                        clients = meraki_api.get_network_clients(api_key, network_id)
+                        if clients:
+                            print(colored("\nActive Network Clients:", "cyan"))
+                            for client in clients:
+                                print(f"Description: {client.get('description', 'N/A')}")
+                                print(f"IP: {client.get('ip', 'N/A')}")
+                                print(f"MAC: {client.get('mac', 'N/A')}")
+                                print(f"Status: {client.get('status', 'N/A')}")
+                                print("-" * 30)
+                        else:
+                            print(colored("\nNo clients found.", "yellow"))
+                    except Exception as e:
+                        print(colored(f"\nError getting network clients: {str(e)}", "red"))
+                        logging.error(f"Error in network clients: {str(e)}", exc_info=True)
+                    input(colored("\nPress Enter to continue...", "green"))
                 elif choice == '3':
-                    traffic = meraki_api.get_network_traffic(api_key, network_id)
-                    if traffic:
-                        print(colored("\nNetwork Traffic Analysis:", "cyan"))
-                        for flow in traffic:
-                            print(f"Application: {flow.get('application', 'N/A')}")
-                            print(f"Destination: {flow.get('destination', 'N/A')}")
-                            print(f"Protocol: {flow.get('protocol', 'N/A')}")
-                            print(f"Usage: {flow.get('usage', {}).get('total', 0)} bytes")
-                            print("-" * 30)
+                    try:
+                        traffic = meraki_api.get_network_traffic(api_key, network_id)
+                        if traffic:
+                            print(colored("\nNetwork Traffic Analysis:", "cyan"))
+                            for flow in traffic:
+                                print(f"Application: {flow.get('application', 'N/A')}")
+                                print(f"Destination: {flow.get('destination', 'N/A')}")
+                                print(f"Protocol: {flow.get('protocol', 'N/A')}")
+                                usage = flow.get('usage', {})
+                                if isinstance(usage, dict):
+                                    print(f"Usage: {usage.get('total', 0)} bytes")
+                                else:
+                                    print(f"Usage: {usage} bytes")
+                                print("-" * 30)
+                        else:
+                            print(colored("\nNo traffic data available.", "yellow"))
+                    except Exception as e:
+                        print(colored(f"\nError getting network traffic: {str(e)}", "red"))
+                        logging.error(f"Error in network traffic: {str(e)}", exc_info=True)
+                    input(colored("\nPress Enter to continue...", "green"))
                 elif choice == '4':
-                    stats = meraki_api.get_network_latency_stats(api_key, network_id)
-                    if stats:
-                        print(colored("\nNetwork Latency Statistics:", "cyan"))
-                        for stat in stats:
-                            print(f"Type: {stat.get('type', 'N/A')}")
-                            print(f"Latency: {stat.get('latencyMs', 'N/A')} ms")
-                            print(f"Loss: {stat.get('lossPercentage', 'N/A')}%")
-                            print("-" * 30)
+                    try:
+                        stats = meraki_api.get_network_latency_stats(api_key, network_id)
+                        if stats:
+                            print(colored("\nNetwork Latency Statistics:", "cyan"))
+                            for stat in stats:
+                                print(f"Type: {stat.get('type', 'N/A')}")
+                                print(f"Latency: {stat.get('latencyMs', 'N/A')} ms")
+                                print(f"Loss: {stat.get('lossPercentage', 'N/A')}%")
+                                print("-" * 30)
+                        else:
+                            print(colored("\nNo latency statistics available.", "yellow"))
+                    except Exception as e:
+                        print(colored(f"\nError getting latency stats: {str(e)}", "red"))
+                        logging.error(f"Error in latency stats: {str(e)}", exc_info=True)
+                    input(colored("\nPress Enter to continue...", "green"))
                 elif choice == '5':
-                    devices = meraki_api.get_meraki_devices(api_key, network_id)
-                    if devices:
-                        print(colored("\nSelect a device:", "cyan"))
-                        for i, device in enumerate(devices, 1):
-                            print(f"{i}. {device.get('name', 'Unknown')} ({device.get('model', 'Unknown')})")
-                        device_choice = input(colored("\nChoose a device number: ", "cyan"))
-                        if device_choice.isdigit() and 1 <= int(device_choice) <= len(devices):
-                            device = devices[int(device_choice) - 1]
-                            performance = meraki_api.get_device_performance(api_key, device['serial'])
-                            if performance:
-                                print(colored(f"\nPerformance stats for {device.get('name')}:", "cyan"))
-                                print(f"CPU: {performance.get('cpu', 'N/A')}%")
-                                print(f"Memory: {performance.get('memory', 'N/A')}%")
-                                print(f"Disk: {performance.get('disk', 'N/A')}%")
+                    try:
+                        devices = meraki_api.get_network_devices(api_key, network_id)
+                        if devices:
+                            print(colored("\nSelect a device:", "cyan"))
+                            for i, device in enumerate(devices, 1):
+                                print(f"{i}. {device.get('name', 'Unknown')} ({device.get('model', 'Unknown')})")
+                            device_choice = input(colored("\nChoose a device number: ", "cyan"))
+                            if device_choice.isdigit() and 1 <= int(device_choice) <= len(devices):
+                                device = devices[int(device_choice) - 1]
+                                performance = meraki_api.get_device_performance(api_key, device['serial'])
+                                if performance:
+                                    print(colored(f"\nPerformance stats for {device.get('name')}:", "cyan"))
+                                    print(f"CPU: {performance.get('cpu', 'N/A')}%")
+                                    print(f"Memory: {performance.get('memory', 'N/A')}%")
+                                    print(f"Disk: {performance.get('disk', 'N/A')}%")
+                                else:
+                                    print(colored("\nNo performance data available for this device.", "yellow"))
+                            else:
+                                print(colored("\nInvalid device selection.", "red"))
+                        else:
+                            print(colored("\nNo devices found in this network.", "yellow"))
+                    except Exception as e:
+                        print(colored(f"\nError getting device performance: {str(e)}", "red"))
+                        logging.error(f"Error in device performance: {str(e)}", exc_info=True)
+                    input(colored("\nPress Enter to continue...", "green"))
                 elif choice == '6':
-                    devices = meraki_api.get_meraki_devices(api_key, network_id)
-                    if devices:
-                        print(colored("\nSelect a device:", "cyan"))
-                        for i, device in enumerate(devices, 1):
-                            print(f"{i}. {device.get('name', 'Unknown')} ({device.get('model', 'Unknown')})")
-                        device_choice = input(colored("\nChoose a device number: ", "cyan"))
-                        if device_choice.isdigit() and 1 <= int(device_choice) <= len(devices):
-                            device = devices[int(device_choice) - 1]
-                            uplink = meraki_api.get_device_uplink(api_key, device['serial'])
-                            if uplink:
-                                print(colored(f"\nUplink info for {device.get('name')}:", "cyan"))
-                                for interface in uplink:
-                                    print(f"Interface: {interface.get('interface', 'N/A')}")
-                                    print(f"Status: {interface.get('status', 'N/A')}")
-                                    print(f"IP: {interface.get('ip', 'N/A')}")
-                                    print("-" * 30)
+                    try:
+                        devices = meraki_api.get_network_devices(api_key, network_id)
+                        if devices:
+                            print(colored("\nSelect a device:", "cyan"))
+                            for i, device in enumerate(devices, 1):
+                                print(f"{i}. {device.get('name', 'Unknown')} ({device.get('model', 'Unknown')})")
+                            device_choice = input(colored("\nChoose a device number: ", "cyan"))
+                            if device_choice.isdigit() and 1 <= int(device_choice) <= len(devices):
+                                device = devices[int(device_choice) - 1]
+                                uplink = meraki_api.get_device_uplink(api_key, device['serial'])
+                                if uplink:
+                                    print(colored(f"\nUplink info for {device.get('name')}:", "cyan"))
+                                    for interface in uplink:
+                                        print(f"Interface: {interface.get('interface', 'N/A')}")
+                                        print(f"Status: {interface.get('status', 'N/A')}")
+                                        print(f"IP: {interface.get('ip', 'N/A')}")
+                                        print("-" * 30)
+                                else:
+                                    print(colored("\nNo uplink information available for this device.", "yellow"))
+                            else:
+                                print(colored("\nInvalid device selection.", "red"))
+                        else:
+                            print(colored("\nNo devices found in this network.", "yellow"))
+                    except Exception as e:
+                        print(colored(f"\nError getting device uplink: {str(e)}", "red"))
+                        logging.error(f"Error in device uplink: {str(e)}", exc_info=True)
+                    input(colored("\nPress Enter to continue...", "green"))
                 elif choice == '7':
                     print(colored("\nGenerating enhanced network diagram...", "cyan"))
                     try:
@@ -1035,22 +1099,25 @@ def select_network(api_key_or_sdk, organization_id):
                 return None
 
 # ==================================================
-# DEFINE the Swiss Army Knife submenu
+# DEFINE the Network Utilities submenu
 # ==================================================
-def swiss_army_knife_submenu(fernet):
+def network_utilities_submenu(fernet):
     while True:
         term_extra.clear_screen()
         term_extra.print_ascii_art()
 
         options = [
-            "DNSBL Check",
+            "DNS Black List Check",
             "IP Check",
-            "MTU Correct Size Calculator [under dev]",
+            "MTU Correct Size Calculator",
             "Password Generator",
             "Subnet Calculator",
-            "WiFi Spectrum Analyzer [under dev]",
-            "WiFi Adapter Info [under dev]",
-            "WiFi Neighbors [under dev]",
+            "WiFi Spectrum Analyzer",
+            "WiFi Adapter Info",
+            "WiFi Neighbors",
+            "Whois Lookup",
+            "NSLookup",
+            "Nmap Network Scanner",
             "Return to Main Menu"
         ]
 
@@ -1063,28 +1130,34 @@ def swiss_army_knife_submenu(fernet):
         print("│".ljust(59) + "│")
         print("└" + "─" * 58 + "┘")
 
-        choice = input(colored("Choose a menu option [1-9]: ", "cyan"))
+        choice = input(colored("Choose a menu option [1-12]: ", "cyan"))
 
         if choice == '1':
             dnsbl_check.main()
         elif choice == '2':
             tools_ipcheck.main(fernet)
         elif choice == '3':
-            pass
+            tools_mtu.main()
         elif choice == '4':
             tools_passgen.main()
         elif choice == '5':
             tools_subnetcalc.main()
         elif choice == '6':
-            pass
+            tools_wifi_spectrum.main()
         elif choice == '7':
-            pass
+            tools_wifi_adapter.main()
         elif choice == '8':
-            pass
+            tools_wifi_neighbors.main()
         elif choice == '9':
+            tools_whois.main()
+        elif choice == '10':
+            tools_nslookup.main()
+        elif choice == '11':
+            tools_nmap.main()
+        elif choice == '12':
             break
         else:
-            print(colored("Invalid input. Please enter a number between 1 and 9.", "red"))
+            print(colored("Invalid input. Please enter a number between 1 and 12.", "red"))
 
 
 def submenu_environmental(api_key):

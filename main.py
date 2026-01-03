@@ -41,13 +41,32 @@ import argparse
 from cryptography.fernet import Fernet
 from base64 import urlsafe_b64encode
 from getpass import getpass
-
 from api import meraki_api_manager
 from settings import db_creator
 from utilities import submenu
 from settings import term_extra
 from modules.meraki.meraki_sdk_wrapper import MerakiSDKWrapper
+import subprocess
+import sys
+from fastapi import FastAPI
+from api.dependency_validator import attach_validator
+from api.dependency_dashboard import router as dependency_router
+from api.dependency_ui import router as dependency_ui_router
 
+app = FastAPI()
+attach_validator(app)
+app.include_router(dependency_router)
+app.include_router(dependency_ui_router)
+
+
+def install(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+
+try:
+    import fastapi
+except ImportError:
+    install("fastapi")
 # Configure logging with more detailed output
 logging.basicConfig(
     level=logging.DEBUG,
@@ -87,11 +106,7 @@ if missing_packages:
 # ==================================================
 # IMPORT various libraries and modules
 # ==================================================
-import os
-import sys
-import logging
-import traceback
-import argparse
+
 
 required_packages = {
     "tabulate": "tabulate",
@@ -160,7 +175,7 @@ def main_menu(fernet):
         print("3. Appliance")
         print("4. Environmental Monitoring")
         print("5. Network-Wide Operations")
-        print("6. Swiss Army Knife")
+        print("6. Network Utilities")
         print("7. Manage API Key")
         print("8. Manage IPinfo Token")
         print(f"9. API Mode: {api_mode.upper()}")
@@ -234,7 +249,7 @@ def main_menu(fernet):
                 print("Please set the Cisco Meraki API key first.")
             input(colored("\nPress Enter to return to the main menu...", "green"))
         elif choice == '6':
-            submenu.swiss_army_knife_submenu(fernet)
+            submenu.network_utilities_submenu(fernet)
         elif choice == '7':
             manage_api_key(fernet)
         elif choice == '8':
@@ -317,20 +332,44 @@ def manage_api_key(fernet):
 
 
 def manage_ipinfo_token(fernet):
+    """Manage IPinfo access token for IP checking functionality"""
     term_extra.clear_screen()
-    current_token = db_creator.get_tools_ipinfo_access_token(fernet)
-    if current_token:
-        print(colored(f"Current IPinfo Token: {current_token}", "yellow"))
-        change = input("Do you want to change it? [yes/no]: ").lower()
-        if change != 'yes':
-            return
+    term_extra.print_ascii_art()
+    
+    print("\nCisco Meraki CLU - IPinfo Token Management")
+    print("=" * 50)
+    
+    try:
+        current_token = db_creator.get_tools_ipinfo_access_token(fernet)
+        if current_token:
+            # Mask the token for security (show first 4 and last 4 characters)
+            masked_token = current_token[:4] + "*" * (len(current_token) - 8) + current_token[-4:] if len(current_token) > 8 else "*" * len(current_token)
+            print(colored(f"\nCurrent IPinfo Token: {masked_token}", "yellow"))
+            print(colored("Token is configured and ready to use.", "green"))
+            change = input(colored("\nDo you want to change it? [yes/no]: ", "cyan")).lower()
+            if change != 'yes':
+                print(colored("\nNo changes made.", "yellow"))
+                input(colored("\nPress Enter to continue...", "green"))
+                return
+        else:
+            print(colored("\nNo IPinfo token is currently configured.", "yellow"))
+            print(colored("You need an IPinfo token to use the IP Check tool.", "cyan"))
+            print(colored("Get your free token at: https://ipinfo.io/signup", "cyan"))
 
-    new_token = input("\nEnter the new IPinfo access token: ")
-    if new_token:
-        db_creator.store_tools_ipinfo_access_token(new_token, fernet)
-        print(colored("\nIPinfo access token saved successfully.", "green"))
-    else:
-        print(colored("No token entered. No changes made.", "red"))
+        new_token = input(colored("\nEnter the new IPinfo access token: ", "cyan")).strip()
+        if new_token:
+            if db_creator.store_tools_ipinfo_access_token(new_token, fernet):
+                print(colored("\n✓ IPinfo access token saved successfully.", "green"))
+                print(colored("You can now use the IP Check tool in the Network Utilities menu.", "green"))
+            else:
+                print(colored("\n✗ Error saving IPinfo token. Please try again.", "red"))
+        else:
+            print(colored("\nNo token entered. No changes made.", "yellow"))
+    except Exception as e:
+        print(colored(f"\n✗ Error managing IPinfo token: {str(e)}", "red"))
+        logging.error(f"Error in manage_ipinfo_token: {str(e)}", exc_info=True)
+    
+    input(colored("\nPress Enter to continue...", "green"))
 
 
 def initialize_api_key():
@@ -404,10 +443,9 @@ def test_ssl_connection(fernet):
         
         try:
             # Try to get organizations (simple API call)
-            url = 'https://api.meraki.com/api/v1/organizations'
             from modules.meraki.meraki_api import make_meraki_request
             
-            response = make_meraki_request(url, headers)
+            response = make_meraki_request(api_key, "/organizations", headers)
             
             # Success messages
             print(colored("\nTest Results:", "cyan"))
