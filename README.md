@@ -18,7 +18,7 @@ A Python-based tool for interacting with the Cisco Meraki API, featuring:
 ## Installation
 1. Clone the repository:
    ```bash
-   git clone https://github.com/keransom56/YOUR_REPO_NAME.git
+   git clone https://github.com/keransom56/meraki-clu-network-visuals.git
    cd YOUR_REPO_NAME
 ```
 
@@ -61,7 +61,7 @@ The application implements a robust SSL verification strategy:
 
 ## Requirements
 - Python 3.7+
-- See requirements.txt for dependencies# cisco-meraki-clu
+- See requirements.txt for dependencies# meraki-clu-network-visuals
 
 Dependency Governance & Drift Protection
 This project includes a full, automated dependency‑governance workflow designed to ensure:
