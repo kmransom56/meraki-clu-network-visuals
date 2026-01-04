@@ -1,0 +1,35 @@
+{
+  "backend": "autogen",
+  "model": "gpt-4",
+  "config_list": [
+    {
+      "model": "gpt-4",
+      "api_key": "${OPENAI_API_KEY}"
+    }
+  ],
+  "auto_repair": {
+    "enabled": true,
+    "repair_types": ["logs", "code", "dependencies"],
+    "auto_apply": false
+  },
+  "optimization": {
+    "enabled": true,
+    "optimization_types": ["code", "performance", "dependencies"]
+  },
+  "learning": {
+    "enabled": true,
+    "knowledge_base_path": "agent_knowledge.json"
+  },
+  "logging": {
+    "level": "INFO",
+    "log_file": "agent.log"
+  },
+  "_comment": "To use Ollama instead of OpenAI, set backend to 'openai' and add:",
+  "_ollama_example": {
+    "backend": "openai",
+    "base_url": "http://localhost:11434/v1",
+    "model": "llama2",
+    "ollama_model": "llama2",
+    "api_key": "ollama"
+  }
+}

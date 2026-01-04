@@ -59,6 +59,7 @@ response = agent.chat("Hello!")
 - Secure API key storage
 - Dual API mode: Custom implementation or Official SDK
 - **Reusable components for API key management and AI agents**
+- **Self-healing agent system** with multi-backend support (OpenAI, Ollama, AutoGen, etc.)
 
 ## Installation
 
@@ -161,14 +162,80 @@ This project includes a **reusable components package** (`reusable/`) that provi
 - 📦 Multiple key storage support
 
 ### AgentFrameworkWrapper
-- 🤖 Multi-backend support (OpenAI, Anthropic, AutoGen, Magentic One)
+- 🤖 Multi-backend support (OpenAI, Anthropic, AutoGen, Magentic One, Ollama)
 - 🔑 Integrated with SecureKeyManager
 - 💬 Simple chat interface
 - 🔍 Code analysis capabilities
+- 🏠 **Local LLM support** via Ollama (no API costs, complete privacy)
 
 **Integration is simple:** Copy the `reusable/` directory to your project and import!
 
 See [REUSABLE_COMPONENTS.md](REUSABLE_COMPONENTS.md) for detailed integration instructions.
+
+## 🤖 Self-Healing Agent System
+
+This application includes a comprehensive **self-auditing and self-healing agent system** that automatically:
+- Analyzes logs and identifies issues
+- Scans codebase for bugs and optimization opportunities
+- Automatically repairs common issues
+- Learns from patterns to improve over time
+- Optimizes code performance and quality
+
+### Quick Start
+
+1. **Install agent dependencies:**
+   ```bash
+   pip install pyautogen magentic docker openai
+   ```
+
+2. **Configure the agent system:**
+   ```bash
+   cp agents/config.example.json agents/config.json
+   # Edit agents/config.json with your API keys
+   ```
+
+3. **Use from main menu:**
+   - Run `python main.py`
+   - Select option `11. Self-Healing Agent System`
+
+**📖 Full documentation: [agents/README.md](agents/README.md)**
+
+### Using Ollama (Local LLM)
+
+The agent system supports **Ollama** for running local LLM models without API costs:
+
+1. **Install Ollama:**
+   - Visit [https://ollama.ai](https://ollama.ai) for installation instructions
+   - Follow the official Ollama documentation for your platform
+
+2. **Pull a model:**
+   ```bash
+   ollama pull llama2
+   # Or other models: mistral, codellama, phi, etc.
+   ```
+
+3. **Configure for Ollama:**
+   ```bash
+   cp agents/config.ollama.example.json agents/config.json
+   ```
+   
+   Or manually edit `agents/config.json`:
+   ```json
+   {
+     "backend": "openai",
+     "base_url": "http://localhost:11434/v1",
+     "model": "llama2",
+     "api_key": "ollama"
+   }
+   ```
+
+**📚 For detailed Ollama setup, see the [official Ollama documentation](https://github.com/ollama/ollama/blob/main/docs/README.md)**
+
+**Benefits of Ollama:**
+- ✅ No API costs - runs completely locally
+- ✅ Complete privacy - data never leaves your machine
+- ✅ Works offline - no internet connection required
+- ✅ Supports many models - llama2, mistral, codellama, and more
 
 ## Requirements
 - Python 3.7+

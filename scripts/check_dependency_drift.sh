@@ -7,7 +7,8 @@ if ! command -v pipreqs >/dev/null 2>&1; then
 fi
 
 # Packages that should be preserved (manually maintained)
-PRESERVE_PACKAGES=("meraki==1.54.0" "pipreqs==0.4.13")
+# These are optional dependencies that may be imported conditionally
+PRESERVE_PACKAGES=("meraki==1.54.0" "pipreqs==0.4.13" "pyautogen==0.10.0" "docker==7.1.0" "magentic==0.41.0" "openai==2.14.0")
 
 # Backup current requirements.txt
 cp requirements.txt requirements.txt.bak

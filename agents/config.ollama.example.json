@@ -1,0 +1,49 @@
+{
+  "backend": "openai",
+  "base_url": "http://localhost:11434/v1",
+  "model": "llama2",
+  "ollama_model": "llama2",
+  "api_key": "ollama",
+  "config_list": [
+    {
+      "model": "llama2",
+      "base_url": "http://localhost:11434/v1",
+      "api_key": "ollama"
+    }
+  ],
+  "auto_repair": {
+    "enabled": true,
+    "repair_types": ["logs", "code", "dependencies"],
+    "auto_apply": false
+  },
+  "optimization": {
+    "enabled": true,
+    "optimization_types": ["code", "performance", "dependencies"]
+  },
+  "learning": {
+    "enabled": true,
+    "knowledge_base_path": "agent_knowledge.json"
+  },
+  "logging": {
+    "level": "INFO",
+    "log_file": "agent.log"
+  },
+  "_comment": "This configuration uses Ollama (local LLM). Make sure Ollama is running:",
+  "_setup": "1. Install Ollama: https://ollama.ai",
+  "_setup2": "2. Pull a model: ollama pull llama2",
+  "_setup3": "3. Start Ollama service (usually runs automatically)",
+  "_setup4": "4. Copy this file to agents/config.json",
+  "_available_models": [
+    "llama2",
+    "llama2:13b",
+    "llama2:70b",
+    "mistral",
+    "codellama",
+    "phi",
+    "neural-chat",
+    "starling-lm",
+    "llava",
+    "gemma",
+    "mixtral"
+  ]
+}

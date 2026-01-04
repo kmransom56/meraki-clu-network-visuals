@@ -45,6 +45,7 @@
 # ==================================================
 import os
 import sys
+import atexit
 from termcolor import colored
 import logging
 import traceback
@@ -66,6 +67,9 @@ from api.dependency_validator import attach_validator
 from api.dependency_dashboard import router as dependency_router
 from api.dependency_ui import router as dependency_ui_router
 
+# Global agent manager instance
+agent_manager = None
+
 app = FastAPI()
 attach_validator(app)
 app.include_router(dependency_router)
@@ -86,6 +90,41 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+
+def initialize_agent_system():
+    """Initialize the agent system at application startup"""
+    global agent_manager
+    try:
+        from agents.agent_manager import AgentManager
+        agent_manager = AgentManager()
+        logger.info("Agent system initialized successfully")
+        logger.info(f"Agent backend: {agent_manager.agent_framework.backend.value}")
+        logger.info(f"Agent available: {agent_manager.agent_framework.agent is not None}")
+        return agent_manager
+    except Exception as e:
+        logger.warning(f"Failed to initialize agent system: {e}")
+        agent_manager = None
+        return None
+
+
+def shutdown_agent_system():
+    """Shutdown and cleanup the agent system"""
+    global agent_manager
+    if agent_manager:
+        try:
+            from datetime import datetime
+            # Save any pending status
+            agent_manager._save_status({'status': 'shutdown', 'timestamp': datetime.now().isoformat()})
+            logger.info("Agent system shutdown complete")
+        except Exception as e:
+            logger.warning(f"Error during agent system shutdown: {e}")
+        finally:
+            agent_manager = None
+
+
+# Register shutdown handler
+atexit.register(shutdown_agent_system)
 
 required_packages = {
     "tabulate": "tabulate",
@@ -271,12 +310,20 @@ def main_menu(fernet):
             test_ssl_connection(fernet)
         elif choice == '11':
             # Self-Healing Agent System
-            try:
-                from agents.agent_menu import agent_menu
-                agent_menu(fernet)
-            except ImportError as e:
-                print(colored(f"Agent system not available: {e}", "yellow"))
-                print("Install agent dependencies with: pip install pyautogen")
+            global agent_manager
+            if agent_manager is None:
+                print(colored("Initializing agent system...", "yellow"))
+                agent_manager = initialize_agent_system()
+            
+            if agent_manager:
+                try:
+                    from agents.agent_menu import agent_menu
+                    agent_menu(fernet, agent_manager)
+                except ImportError as e:
+                    print(colored(f"Agent system not available: {e}", "yellow"))
+                    print("Install agent dependencies with: pip install pyautogen")
+            else:
+                print(colored("Agent system is not available. Check logs for details.", "red"))
             input(colored("\nPress Enter to return to the main menu...", "green"))
         elif choice == '12':
             import_env_variables(fernet)
@@ -669,6 +716,14 @@ def main():
                 meraki_api_manager.save_api_key(api_key, fernet)
                 print(colored("API key saved successfully!", "green"))
                 input(colored("\nPress Enter to continue...", "green"))
+
+        # Initialize agent system at startup
+        print(colored("Initializing agent system...", "cyan"))
+        initialize_agent_system()
+        if agent_manager and agent_manager.agent_framework.agent:
+            print(colored(f"Agent system ready (Backend: {agent_manager.agent_framework.backend.value})", "green"))
+        else:
+            print(colored("Agent system initialized but not fully available", "yellow"))
 
         # At this point, the database exists, so proceed to the main menu
         main_menu(fernet)
