@@ -37,4 +37,7 @@ ENV/
 *.pem
 *.log
 .env
-.gitignore
+.MERAKI_API_KEY
+.cisco_meraki_clu.db
+.MERAKI_DASHBOARD_API_KEY
+requirements.txt.bak

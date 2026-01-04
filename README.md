@@ -16,21 +16,66 @@ A Python-based tool for interacting with the Cisco Meraki API, featuring:
 - Dual API mode: Custom implementation or Official SDK
 
 ## Installation
+
+### Prerequisites
+- Python 3.7+
+- `uv` package manager (install with: `pip install uv`)
+
+### Setup Steps
+
 1. Clone the repository:
    ```bash
-   git clone https://github.com/keransom56/YOUR_REPO_NAME.git
-   cd YOUR_REPO_NAME
-```
-
-2. Install the required packages:
-   ```bash
-   pip install -r requirements.txt
+   git clone https://github.com/keransom56/merak-cli-network-visuals.git
+   cd merak-cli-network-visuals
    ```
 
-3. Run the application:
+2. Install `uv` (if not already installed):
+   
+   **Windows (using winget):**
+   ```pwsh
+   winget install --id=astral-sh.uv -e
+   ```
+   
+   **Using pipx (recommended for isolated installation):**
+   ```bash
+   pipx install uv
+   ```
+   
+   **Using pip (alternative):**
+   ```bash
+   pip install uv
+   ```
+
+3. Create a virtual environment using `uv`:
+   ```bash
+   uv venv
+   ```
+
+4. Activate the virtual environment:
+   - On Windows:
+     ```bash
+     .venv\Scripts\activate
+     ```
+   - On Unix/macOS:
+     ```bash
+     source .venv/bin/activate
+     ```
+
+5. Install the required packages using `uv`:
+   ```bash
+   uv pip install -r requirements.txt
+   ```
+
+6. Run the application:
    ```bash
    python main.py
    ```
+
+### Alternative: Using `uv` without activating venv
+You can also run commands directly with `uv` without activating the virtual environment:
+```bash
+uv run python main.py
+```
 
 ## API Mode Selection
 The application now supports two API modes:
@@ -61,7 +106,8 @@ The application implements a robust SSL verification strategy:
 
 ## Requirements
 - Python 3.7+
-- See requirements.txt for dependencies# cisco-meraki-clu
+- `uv` package manager (install with: `pip install uv`)
+- See `requirements.txt` for Python dependencies
 
 Dependency Governance & Drift Protection
 This project includes a full, automated dependency‑governance workflow designed to ensure:

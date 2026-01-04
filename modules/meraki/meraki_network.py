@@ -7,10 +7,41 @@ from settings import term_extra
 import os
 from pathlib import Path
 from termcolor import colored
+import logging
 
-def display_network_status(status_data):
-    """Display network status overview"""
+def display_network_status(status_data, api_key_or_sdk=None, organization_id=None):
+    """
+    Display network status overview with enhanced status information.
+    
+    Args:
+        status_data: List of device dictionaries
+        api_key_or_sdk: Optional API key or SDK wrapper for status enrichment
+        organization_id: Optional organization ID for fetching device statuses
+    """
     if status_data:
+        # Try to enrich with device statuses if API/organization info is provided
+        device_statuses = {}
+        if api_key_or_sdk and organization_id:
+            try:
+                if hasattr(api_key_or_sdk, 'get_organization_devices_statuses'):
+                    # SDK wrapper
+                    statuses = api_key_or_sdk.get_organization_devices_statuses(organization_id)
+                elif hasattr(api_key_or_sdk, 'dashboard'):
+                    # SDK wrapper direct
+                    statuses = api_key_or_sdk.dashboard.organizations.getOrganizationDevicesStatuses(organization_id)
+                else:
+                    # API key
+                    statuses = meraki_api.get_organization_devices_statuses(api_key_or_sdk, organization_id)
+                
+                # Create lookup by serial
+                if statuses:
+                    for status_info in statuses:
+                        serial = status_info.get('serial')
+                        if serial:
+                            device_statuses[serial] = status_info
+            except Exception as e:
+                logging.debug(f"Could not fetch device statuses for enrichment: {str(e)}")
+        
         table = Table(show_header=True, header_style="bold green", box=box.SIMPLE)
         table.add_column("Device Name")
         table.add_column("Status")
@@ -19,20 +50,91 @@ def display_network_status(status_data):
         table.add_column("Model")
         
         for device in status_data:
-            status = device.get('status', 'unknown')
+            serial = device.get('serial')
+            
+            # Try to get status from enriched data first
+            status_info = device_statuses.get(serial) if serial else None
+            status = None
+            last_reported = None
+            
+            if status_info:
+                status = status_info.get('status')
+                last_reported = status_info.get('lastReportedAt')
+            else:
+                # Fall back to device data
+                status = device.get('status')
+                last_reported = device.get('lastReportedAt')
+            
+            # Enhanced status determination
+            if not status or status == 'unknown':
+                # Try to determine from lastReportedAt if available
+                if last_reported:
+                    try:
+                        from datetime import datetime, timezone
+                        if isinstance(last_reported, str):
+                            try:
+                                last_reported_dt = datetime.strptime(last_reported, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+                            except ValueError:
+                                try:
+                                    last_reported_dt = datetime.strptime(last_reported, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+                                except ValueError:
+                                    last_reported_dt = datetime.fromisoformat(last_reported.replace('Z', '+00:00'))
+                            # Ensure timezone-aware datetime (handle naive datetimes)
+                            if last_reported_dt.tzinfo is None:
+                                last_reported_dt = last_reported_dt.replace(tzinfo=timezone.utc)
+                        else:
+                            last_reported_dt = last_reported
+                            # Ensure timezone-aware datetime if it's a datetime object
+                            if isinstance(last_reported_dt, datetime) and last_reported_dt.tzinfo is None:
+                                last_reported_dt = last_reported_dt.replace(tzinfo=timezone.utc)
+                        
+                        now = datetime.now(timezone.utc)
+                        time_diff = abs((now - last_reported_dt).total_seconds())  # Use abs to handle clock skew
+                        
+                        if time_diff < 300:  # 5 minutes
+                            status = 'online'
+                        elif time_diff < 3600:  # 1 hour
+                            status = 'dormant'
+                        else:
+                            status = 'offline'
+                    except Exception:
+                        status = 'unknown'
+                else:
+                    status = 'unknown'
+            
+            # Format last reported timestamp
+            if last_reported:
+                try:
+                    if isinstance(last_reported, str):
+                        try:
+                            last_reported_dt = datetime.strptime(last_reported, "%Y-%m-%dT%H:%M:%S.%fZ")
+                            last_reported = last_reported_dt.strftime("%Y-%m-%d %H:%M")
+                        except ValueError:
+                            try:
+                                last_reported_dt = datetime.strptime(last_reported, "%Y-%m-%dT%H:%M:%SZ")
+                                last_reported = last_reported_dt.strftime("%Y-%m-%d %H:%M")
+                            except ValueError:
+                                from datetime import datetime, timezone
+                                last_reported_dt = datetime.fromisoformat(last_reported.replace('Z', '+00:00'))
+                                last_reported = last_reported_dt.strftime("%Y-%m-%d %H:%M")
+                    else:
+                        last_reported = last_reported.strftime("%Y-%m-%d %H:%M")
+                except Exception:
+                    last_reported = "Unknown format"
+            else:
+                last_reported = "N/A"
+            
+            # Status color coding
             status_color = {
                 'online': 'green',
                 'offline': 'red',
-                'alerting': 'yellow'
+                'alerting': 'yellow',
+                'dormant': 'yellow'
             }.get(status.lower() if status else 'unknown', 'white')
-            
-            last_reported = device.get('lastReportedAt', '')
-            if last_reported:
-                last_reported = datetime.strptime(last_reported, "%Y-%m-%dT%H:%M:%S.%fZ").strftime("%Y-%m-%d %H:%M")
             
             table.add_row(
                 device.get('name', 'N/A'),
-                f"[{status_color}]{status}[/{status_color}]",
+                f"[{status_color}]{status or 'unknown'}[/{status_color}]",
                 last_reported,
                 device.get('serial', 'N/A'),
                 device.get('model', 'N/A')

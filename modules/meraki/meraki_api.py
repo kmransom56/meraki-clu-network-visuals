@@ -411,7 +411,67 @@ def get_organization_policy_objects_groups(api_key, organization_id):
 # FETCH Organization Devices Statuses
 # ==============================================================
 def get_organization_devices_statuses(api_key, organization_id):
-    return make_meraki_request(api_key, f"/organizations/{organization_id}/devices/statuses")
+    """
+    Get device status information for an organization with enhanced data retrieval
+    
+    Args:
+        api_key (str): Meraki API key
+        organization_id (str): Organization ID
+        
+    Returns:
+        list: List of device status dictionaries with enhanced information
+    """
+    try:
+        devices_statuses = make_meraki_request(api_key, f"/organizations/{organization_id}/devices/statuses")
+        if devices_statuses:
+            # Enrich device status data
+            for device in devices_statuses:
+                # Ensure status is properly set
+                if not device.get('status') or device.get('status') == 'unknown':
+                    # Try to determine status from lastReportedAt
+                    last_reported = device.get('lastReportedAt')
+                    if last_reported:
+                        try:
+                            from datetime import datetime, timezone
+                            if isinstance(last_reported, str):
+                                if 'T' in last_reported:
+                                    # ISO format with 'T' separator
+                                    last_reported_dt = datetime.fromisoformat(last_reported.replace('Z', '+00:00'))
+                                else:
+                                    # Try alternative formats without 'T'
+                                    try:
+                                        last_reported_dt = datetime.strptime(last_reported, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
+                                    except ValueError:
+                                        try:
+                                            last_reported_dt = datetime.strptime(last_reported, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                                        except ValueError:
+                                            # Fallback to fromisoformat which is more flexible
+                                            last_reported_dt = datetime.fromisoformat(last_reported.replace('Z', '+00:00'))
+                                # Ensure timezone-aware datetime (handle naive datetimes)
+                                if last_reported_dt.tzinfo is None:
+                                    last_reported_dt = last_reported_dt.replace(tzinfo=timezone.utc)
+                            else:
+                                last_reported_dt = last_reported
+                                # Ensure timezone-aware datetime if it's a datetime object
+                                if isinstance(last_reported_dt, datetime) and last_reported_dt.tzinfo is None:
+                                    last_reported_dt = last_reported_dt.replace(tzinfo=timezone.utc)
+                            
+                            now = datetime.now(timezone.utc)
+                            time_diff = abs((now - last_reported_dt).total_seconds())  # Use abs to handle clock skew
+                            
+                            if time_diff < 300:  # 5 minutes
+                                device['status'] = 'online'
+                            elif time_diff < 3600:  # 1 hour
+                                device['status'] = 'dormant'
+                            else:
+                                device['status'] = 'offline'
+                        except Exception as e:
+                            logging.debug(f"Could not determine status from lastReportedAt: {str(e)}")
+                            device['status'] = 'unknown'
+        return devices_statuses or []
+    except Exception as e:
+        logging.error(f"Error getting organization device statuses: {str(e)}")
+        return []
 
 # ==================================================
 # GET Environmental Sensor Data
@@ -467,20 +527,92 @@ def get_organization_summary(api_key, organization_id):
 def get_network_health(api_key, network_id):
     return make_meraki_request(api_key, f"/networks/{network_id}/health")
 
-def get_network_clients(api_key, network_id, timespan=3600):
+def get_network_clients(api_key, network_id, timespan=10800):
     """
-    Get clients connected to a network
+    Get clients connected to a network with enhanced parameters for better data retrieval
     
     Args:
         api_key (str): Meraki API key
         network_id (str): Network ID
-        timespan (int): Timespan in seconds for which clients are fetched (default: 3600 = 1 hour)
+        timespan (int): Timespan in seconds for which clients are fetched (default: 10800 = 3 hours)
         
     Returns:
-        list: List of client devices
+        list: List of client devices with enhanced information
+    """
+    # Use longer timespan and include more parameters for better data
+    params = {
+        "perPage": 1000, 
+        "timespan": timespan,
+        "startingAfter": None,  # For pagination if needed
+    }
+    try:
+        clients = make_meraki_request(api_key, f"/networks/{network_id}/clients", params=params)
+        if clients:
+            # Enrich client data with better field mapping
+            for client in clients:
+                # Ensure status is properly set
+                if not client.get('status'):
+                    # Determine status based on lastSeen if status is missing
+                    last_seen = client.get('lastSeen')
+                    if last_seen:
+                        try:
+                            from datetime import datetime, timezone
+                            if isinstance(last_seen, str):
+                                if 'T' in last_seen:
+                                    # ISO format with 'T' separator
+                                    last_seen_dt = datetime.fromisoformat(last_seen.replace('Z', '+00:00'))
+                                else:
+                                    # Try alternative formats without 'T'
+                                    try:
+                                        last_seen_dt = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S.%f").replace(tzinfo=timezone.utc)
+                                    except ValueError:
+                                        try:
+                                            last_seen_dt = datetime.strptime(last_seen, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+                                        except ValueError:
+                                            # Fallback to fromisoformat which is more flexible
+                                            last_seen_dt = datetime.fromisoformat(last_seen.replace('Z', '+00:00'))
+                                # Ensure timezone-aware datetime (handle naive datetimes)
+                                if last_seen_dt.tzinfo is None:
+                                    last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc)
+                            else:
+                                last_seen_dt = last_seen
+                                # Ensure timezone-aware datetime if it's a datetime object
+                                if isinstance(last_seen_dt, datetime) and last_seen_dt.tzinfo is None:
+                                    last_seen_dt = last_seen_dt.replace(tzinfo=timezone.utc)
+                            now = datetime.now(timezone.utc)
+                            time_diff = abs((now - last_seen_dt).total_seconds())  # Use abs to handle clock skew
+                            if time_diff < 300:  # 5 minutes
+                                client['status'] = 'online'
+                            elif time_diff < 3600:  # 1 hour
+                                client['status'] = 'dormant'
+                            else:
+                                client['status'] = 'offline'
+                        except Exception:
+                            client['status'] = 'unknown'
+        return clients or []
+    except Exception as e:
+        logging.error(f"Error getting network clients: {str(e)}")
+        return []
+
+
+def get_device_clients(api_key, serial, timespan=10800):
+    """
+    Get clients connected to a specific device for more detailed information
+    
+    Args:
+        api_key (str): Meraki API key
+        serial (str): Device serial number
+        timespan (int): Timespan in seconds for which clients are fetched (default: 10800 = 3 hours)
+        
+    Returns:
+        list: List of client devices connected to this device
     """
     params = {"perPage": 1000, "timespan": timespan}
-    return make_meraki_request(api_key, f"/networks/{network_id}/clients", params=params)
+    try:
+        return make_meraki_request(api_key, f"/devices/{serial}/clients", params=params) or []
+    except Exception as e:
+        logging.warning(f"Could not get device clients for {serial}: {str(e)}")
+        return []
 
 # ==================================================
 # GET Network Topology
@@ -575,7 +707,8 @@ def get_device_performance(api_key, serial):
         serial (str): Device serial number
         
     Returns:
-        dict: Device performance metrics (CPU, memory, disk usage)
+        dict: Device information including status, lastReportedAt, lanIp, firmware, and model.
+              Note: CPU, memory, and disk metrics are not available from Meraki API.
     """
     try:
         device_data = make_meraki_request(api_key, f"/devices/{serial}")

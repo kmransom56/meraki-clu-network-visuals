@@ -270,7 +270,7 @@ def submenu_sw_and_ap(api_key):
                 network_id = select_network(api_key, organization_id)
                 if network_id:
                     devices = meraki_api.get_network_devices(api_key, network_id)
-                    meraki_network.display_network_status(devices)
+                    meraki_network.display_network_status(devices, api_key_or_sdk=api_key, organization_id=organization_id)
             input(colored("\nPress Enter to continue...", "green"))
         elif choice == '2':
             organization_id = select_organization(api_key)
@@ -1449,7 +1449,7 @@ def submenu_sw_and_ap_sdk(sdk_wrapper):
                 network_id = select_network(sdk_wrapper, organization_id)
                 if network_id:
                     devices = sdk_wrapper.get_network_devices(network_id)
-                    meraki_network.display_network_status(devices)
+                    meraki_network.display_network_status(devices, api_key_or_sdk=sdk_wrapper, organization_id=organization_id)
             input(colored("\nPress Enter to continue...", "green"))
         elif choice == '2':
             organization_id = select_organization(sdk_wrapper)

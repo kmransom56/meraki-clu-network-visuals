@@ -1,17 +1,24 @@
 #**************************************************************************
-#   App:         Cisco Meraki CLU                                         *
-#   Version:     1.5                                                      *
-#   Author:      Matia Zanella                                            *
+#   App:         Meraki Management Utility                                *
+#   Version:     2.0                                                      *
+#   Author:      Matia Zanella                                            * 
+#   Updated by:  Keith Ransom                                             *
 #   Description: Cisco Meraki CLU (Command Line Utility) is an essential  *
 #                tool crafted for Network Administrators managing Meraki  *
+#                Added Network Visuals and Reporting Tools                *
+#                                                                         *
+#                                                                         *
 #   Github:      https://github.com/akamura/cisco-meraki-clu/             *
+#   Copyright (C) 2024 Matia Zanella                                      *
+#   https://www.matiazanella.com                                          *
+#                                                                         *
+#   Github:      https://github.com/kmransom/meraki-clu-network-visuals   *
+#   Copyright (C) 2026 Keith Ransom                                       *
 #                                                                         *
 #   Icon Author:        Cisco Systems, Inc.                               *
 #   Icon Author URL:    https://meraki.cisco.com/                         *
 #                                                                         *
-#   Copyright (C) 2024 Matia Zanella                                      *
-#   https://www.matiazanella.com                                          *
-#                                                                         *
+#                                                                         *                                    *
 #   This program is free software; you can redistribute it and/or modify  *
 #   it under the terms of the GNU General Public License as published by  *
 #   the Free Software Foundation; either version 2 of the License, or     *

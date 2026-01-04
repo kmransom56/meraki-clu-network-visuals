@@ -7,15 +7,16 @@ dependency_audit:
   stage: audit
   image: python:3.11
   script:
-    - pip install pipreqs
+    - pip install uv
+    - uv pip install pipreqs
     - python -m venv .venv
     - . .venv/bin/activate
-    - pip install -r requirements.txt
-    - pipreqs . --force --encoding=utf-8 --ignore .venv,scripts,tests
-    - pip install -r requirements.txt
-    - pip freeze > requirements.lock
+    - uv pip install -r requirements.txt
+    - uv run pipreqs . --force --encoding=utf-8 --ignore .venv,scripts,tests
+    - uv pip install -r requirements.txt
+    - uv pip freeze > requirements.lock
     - git diff --exit-code requirements.lock || (echo "Dependency drift detected" && exit 1)
-    - pip check
+    - uv pip check
   artifacts:
     paths:
       - requirements.lock
