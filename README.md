@@ -34,6 +34,8 @@ response = agent.chat("Hello!")
 
 **📚 Full Docs: [reusable/README.md](reusable/README.md)**
 
+**🤖 AI Agent Instructions: [AGENTS.md](AGENTS.md)** - Guidelines for AI agents working with this codebase
+
 ### What's Included
 
 - **SecureKeyManager** - Encrypted API key storage with environment variable fallback

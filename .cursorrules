@@ -1,0 +1,78 @@
+# Cursor Rules for Meraki CLI Network Visuals
+
+## Reusable Components
+
+This repository includes a **reusable components package** (`reusable/`) that should be used for:
+
+1. **API Key Management**: Always use `SecureKeyManager` from `reusable.secure_key_manager`
+2. **AI Agent Functionality**: Use `AgentFrameworkWrapper` from `reusable.agent_framework_wrapper`
+
+## Key Guidelines
+
+### When Working with API Keys
+
+- ✅ **DO**: Use `SecureKeyManager` for all API key storage
+- ✅ **DO**: Check environment variables first, then storage
+- ✅ **DO**: Use `env_var_name` parameter for environment variable fallback
+- ❌ **DON'T**: Hardcode API keys in source code
+- ❌ **DON'T**: Store API keys in plain text files
+- ❌ **DON'T**: Commit API keys to git (they're in `.gitignore`)
+
+### When Working with AI Agents
+
+- ✅ **DO**: Use `AgentFrameworkWrapper` for agent functionality
+- ✅ **DO**: Initialize with `SecureKeyManager` for API key management
+- ✅ **DO**: Check `agent.is_available()` before using
+- ❌ **DON'T**: Directly instantiate agent backends (use wrapper)
+
+### Code Patterns
+
+#### Storing API Keys
+```python
+from reusable.secure_key_manager import SecureKeyManager
+
+key_manager = SecureKeyManager(app_name="my_app")
+key_manager.save_key("api_key", "sk-...", env_var_name="API_KEY")
+```
+
+#### Retrieving API Keys
+```python
+api_key = key_manager.get_key("api_key", env_var_name="API_KEY", default=None)
+```
+
+#### Using AI Agents
+```python
+from reusable.agent_framework_wrapper import AgentFrameworkWrapper, AgentBackend
+
+agent = AgentFrameworkWrapper(AgentBackend.OPENAI, key_manager)
+if agent.is_available():
+    response = agent.chat("Hello!")
+```
+
+### File Organization
+
+- **Reusable code**: Add to `reusable/` package
+- **Project-specific code**: Add to appropriate module (`api/`, `modules/`, etc.)
+- **Examples**: Add to `reusable/examples/`
+- **Documentation**: Update `README.md`, `REUSABLE_COMPONENTS.md`, or `reusable/README.md`
+
+### Environment Variables
+
+- Use `scripts/import_env_vars.py` to import from `KEY="VALUE"` format files
+- Supported formats: `export KEY="VALUE"` or `KEY="VALUE"`
+- Environment variables take precedence over stored keys
+
+### Security
+
+- All API keys are encrypted using Fernet
+- Keys stored in SQLite databases in user's home directory
+- Each app uses isolated storage (by app name)
+- Never commit sensitive data
+
+### Documentation
+
+When adding features:
+- Update relevant README files
+- Add examples to `reusable/examples/` if applicable
+- Include docstrings in code
+- Update `AGENTS.md` if adding new patterns
