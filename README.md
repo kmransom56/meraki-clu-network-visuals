@@ -25,8 +25,8 @@ A Python-based tool for interacting with the Cisco Meraki API, featuring:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/keransom56/merak-cli-network-visuals.git
-   cd merak-cli-network-visuals
+   git clone https://github.com/kmransom56/meraki-clu-network-visuals.git
+   cd meraki-clu-network-visuals
    ```
 
 2. Install `uv` (if not already installed):
@@ -141,4 +141,4 @@ scripts/bootstrap.ps1        → Environment bootstrap
 scripts/rollback_requirements.ps1 → Rollback workflow
 scripts/sign_requirements.py → Signed artifact generator
 api/dependency_dashboard.py  → JSON emitter for admin panel
-api/dependency_validator.py  → Runtime dependency validator# meraki-clu-network-visuals
+api/dependency_validator.py  → Runtime dependency validator
