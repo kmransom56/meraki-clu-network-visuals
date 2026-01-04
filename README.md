@@ -19,7 +19,7 @@ A Python-based tool for interacting with the Cisco Meraki API, featuring:
 1. Clone the repository:
    ```bash
    git clone https://github.com/keransom56/meraki-clu-network-visuals.git
-   cd YOUR_REPO_NAME
+   cd meraki-clu-network-visuals
 ```
 
 2. Install the required packages:
