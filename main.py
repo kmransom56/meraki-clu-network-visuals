@@ -55,6 +55,7 @@ from getpass import getpass
 from api import meraki_api_manager
 from settings import db_creator
 from settings import branding
+from settings import config_loader
 from utilities import submenu
 from settings import term_extra
 from modules.meraki.meraki_sdk_wrapper import MerakiSDKWrapper
@@ -593,10 +594,11 @@ def main():
             create_db = input(colored("\nDo you want to create the database now? (yes/no): ", "cyan")).strip().lower()
             
             if create_db == 'yes':
-                db_password = getpass(colored("\nPlease create a password for database encryption: ", "green"))
-                confirm_password = getpass(colored("Please confirm your password: ", "green"))
+                # Try to get password from apikeys.ini first
+                db_password = config_loader.get_database_password()
                 
-                if db_password == confirm_password:
+                if db_password:
+                    print(colored(f"\nDatabase password loaded from apikeys.ini", "green"))
                     fernet = db_creator.generate_fernet_key(db_password)
                     
                     # Create the database directory if it doesn't exist
@@ -616,17 +618,51 @@ def main():
                     
                     main_menu(fernet)
                 else:
-                    print(colored("\nPasswords do not match. Please try again.", "red"))
-                    exit()
+                    # Fallback to manual entry if not found in config
+                    db_password = getpass(colored("\nPlease create a password for database encryption: ", "green"))
+                    confirm_password = getpass(colored("Please confirm your password: ", "green"))
+                    
+                    if db_password == confirm_password:
+                        fernet = db_creator.generate_fernet_key(db_password)
+                        
+                        # Create the database directory if it doesn't exist
+                        db_dir = os.path.dirname(db_path)
+                        if not os.path.exists(db_dir):
+                            os.makedirs(db_dir)
+                        
+                        # Create the database with the necessary tables
+                        db_creator.create_cisco_meraki_clu_db(db_path, fernet)
+                        
+                        print(colored("\nDatabase created successfully!", "green"))
+                        
+                        # If API key was provided via command line, save it now
+                        if api_key:
+                            meraki_api_manager.save_api_key(api_key, fernet)
+                            print(colored("API key saved successfully!", "green"))
+                        
+                        main_menu(fernet)
+                    else:
+                        print(colored("\nPasswords do not match. Please try again.", "red"))
+                        exit()
             else:
                 print(colored("Database creation cancelled. Exiting program.", "yellow"))
                 exit()
         else:
-            # Database exists, ask for password
+            # Database exists, try to get password from apikeys.ini first
             os.system('cls')  # Clears the terminal screen.
             term_extra.print_ascii_art()
-            db_password = getpass(colored(f"\n\n{branding.WELCOME_MESSAGE}\nPlease enter your database password to continue: ", "green"))
-            fernet = db_creator.generate_fernet_key(db_password)
+            
+            # Try to get password from apikeys.ini
+            db_password = config_loader.get_database_password()
+            
+            if db_password:
+                print(colored(f"\n{branding.WELCOME_MESSAGE}", "green"))
+                print(colored("Database password loaded from apikeys.ini", "green"))
+                fernet = db_creator.generate_fernet_key(db_password)
+            else:
+                # Fallback to manual entry
+                db_password = getpass(colored(f"\n\n{branding.WELCOME_MESSAGE}\nPlease enter your database password to continue: ", "green"))
+                fernet = db_creator.generate_fernet_key(db_password)
             
             # If API key was provided via command line, save it now
             if api_key:
