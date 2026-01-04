@@ -23,7 +23,7 @@ var/
 # Virtual Environment
 venv/
 ENV/
-
+.ini
 # IDE
 .idea/
 .vscode/
@@ -41,3 +41,10 @@ ENV/
 .cisco_meraki_clu.db
 .MERAKI_DASHBOARD_API_KEY
 requirements.txt.bak
+apikeys.ini
+# Agent system
+agent_backups/
+agent_knowledge.json
+agent_status.json
+agent_workspace/
+agents/config.json

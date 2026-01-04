@@ -183,9 +183,11 @@ def main_menu(fernet):
         print("8. Manage IPinfo Token")
         print(f"9. API Mode: {api_mode.upper()}")
         print("10. Test SSL Connection")
-        print("11. Exit")
+        print("11. Self-Healing Agent System")
+        print("12. Import Environment Variables")
+        print("13. Exit")
         
-        choice = input(colored("\nChoose a menu option [1-11]: ", "cyan"))
+        choice = input(colored("\nChoose a menu option [1-13]: ", "cyan"))
         
         if choice == '1':
             if api_key:
@@ -262,6 +264,17 @@ def main_menu(fernet):
         elif choice == '10':
             test_ssl_connection(fernet)
         elif choice == '11':
+            # Self-Healing Agent System
+            try:
+                from agents.agent_menu import agent_menu
+                agent_menu(fernet)
+            except ImportError as e:
+                print(colored(f"Agent system not available: {e}", "yellow"))
+                print("Install agent dependencies with: pip install pyautogen")
+            input(colored("\nPress Enter to return to the main menu...", "green"))
+        elif choice == '12':
+            import_env_variables(fernet)
+        elif choice == '13':
             print(colored("\nThank you for using Cisco Meraki CLU!", "green"))
             sys.exit(0)
         else:
@@ -371,6 +384,85 @@ def manage_ipinfo_token(fernet):
     except Exception as e:
         print(colored(f"\n✗ Error managing IPinfo token: {str(e)}", "red"))
         logging.error(f"Error in manage_ipinfo_token: {str(e)}", exc_info=True)
+    
+    input(colored("\nPress Enter to continue...", "green"))
+
+
+def import_env_variables(fernet):
+    """Import environment variables from a file with export KEY=\"VALUE\" format"""
+    term_extra.clear_screen()
+    term_extra.print_ascii_art()
+    
+    print("\nCisco Meraki CLU - Import Environment Variables")
+    print("=" * 50)
+    print("\nThis tool imports environment variables from a file with the format:")
+    print(colored("  export KEY_NAME=\"VALUE\"", "cyan"))
+    print(colored("  or", "cyan"))
+    print(colored("  KEY_NAME=\"VALUE\"", "cyan"))
+    print("\nThe file can contain multiple environment variables, one per line.")
+    print("Comments (lines starting with #) and empty lines are ignored.")
+    print("Both bash export format and INI format are supported.")
+    
+    try:
+        file_path = input(colored("\nEnter the path to the environment file: ", "cyan")).strip()
+        
+        if not file_path:
+            print(colored("\nNo file path provided. Cancelling.", "yellow"))
+            input(colored("\nPress Enter to continue...", "green"))
+            return
+        
+        if not os.path.exists(file_path):
+            print(colored(f"\n✗ File not found: {file_path}", "red"))
+            input(colored("\nPress Enter to continue...", "green"))
+            return
+        
+        # Ask for scope
+        print("\nSelect scope:")
+        print("1. User (default) - Sets variables for current user")
+        print("2. System - Sets variables system-wide (requires Administrator)")
+        scope_choice = input(colored("\nChoose scope [1-2] (default: 1): ", "cyan")).strip() or "1"
+        scope = 'system' if scope_choice == '2' else 'user'
+        
+        # Ask for dry run
+        dry_run_choice = input(colored("\nPreview changes first? [y/N]: ", "cyan")).strip().lower()
+        dry_run = dry_run_choice == 'y'
+        
+        # Import the script function
+        import sys
+        script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'import_env_vars.py')
+        
+        if not os.path.exists(script_path):
+            print(colored(f"\n✗ Import script not found: {script_path}", "red"))
+            print(colored("Please ensure scripts/import_env_vars.py exists.", "yellow"))
+            input(colored("\nPress Enter to continue...", "green"))
+            return
+        
+        # Run the import script
+        import subprocess
+        
+        cmd = [sys.executable, script_path, file_path, '--' + scope]
+        if dry_run:
+            cmd.append('--dry-run')
+        
+        print(colored("\n" + "="*50, "cyan"))
+        print(colored("Running import script...", "cyan"))
+        print(colored("="*50 + "\n", "cyan"))
+        
+        result = subprocess.run(cmd, capture_output=False, text=True)
+        
+        if result.returncode == 0:
+            if not dry_run:
+                print(colored("\n✓ Environment variables imported successfully!", "green"))
+                print(colored("\nNote: You may need to restart your terminal/application", "yellow"))
+                print(colored("      for the changes to take effect in new processes.", "yellow"))
+        else:
+            print(colored("\n⚠ Some environment variables may have failed to import.", "yellow"))
+            
+    except KeyboardInterrupt:
+        print(colored("\n\nOperation cancelled by user.", "yellow"))
+    except Exception as e:
+        print(colored(f"\n✗ Error importing environment variables: {str(e)}", "red"))
+        logging.error(f"Error in import_env_variables: {str(e)}", exc_info=True)
     
     input(colored("\nPress Enter to continue...", "green"))
 
