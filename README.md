@@ -6,6 +6,40 @@ A Python-based tool for interacting with the Cisco Meraki API, featuring:
 - SSL proxy support (Zscaler compatible)
 - Secure API key management
 - Official Meraki Dashboard API SDK integration
+- **Reusable Components** - API key management and AI agent framework for other applications
+
+## 🚀 Reusable Components
+
+This repository includes a **reusable components package** that can be easily integrated into other Python applications:
+
+### Quick Integration
+
+```python
+from reusable.secure_key_manager import SecureKeyManager
+from reusable.agent_framework_wrapper import AgentFrameworkWrapper, AgentBackend
+
+# Secure API key management
+key_manager = SecureKeyManager(app_name="my_app")
+key_manager.save_key("api_key", "sk-...", env_var_name="API_KEY")
+api_key = key_manager.get_key("api_key")
+
+# AI agent framework
+agent = AgentFrameworkWrapper(AgentBackend.OPENAI, key_manager)
+response = agent.chat("Hello!")
+```
+
+**📖 See [REUSABLE_COMPONENTS.md](REUSABLE_COMPONENTS.md) for full integration guide**
+
+**⚡ Quick Start: [reusable/QUICKSTART.md](reusable/QUICKSTART.md)**
+
+**📚 Full Docs: [reusable/README.md](reusable/README.md)**
+
+### What's Included
+
+- **SecureKeyManager** - Encrypted API key storage with environment variable fallback
+- **AgentFrameworkWrapper** - Multi-backend AI agent framework (OpenAI, Anthropic, AutoGen, etc.)
+
+**To use in your project:** Simply copy the `reusable/` directory to your project!
 
 ## Features
 - Interactive network topology visualization using D3.js
@@ -14,6 +48,7 @@ A Python-based tool for interacting with the Cisco Meraki API, featuring:
 - Proxy-aware SSL handling
 - Secure API key storage
 - Dual API mode: Custom implementation or Official SDK
+- **Reusable components for API key management and AI agents**
 
 ## Installation
 
@@ -103,6 +138,27 @@ The application implements a robust SSL verification strategy:
 - SSL certificate handling with proxy support
 - Environment variable support for API keys
 - Comprehensive error handling and logging
+
+## Reusable Components
+
+This project includes a **reusable components package** (`reusable/`) that provides:
+
+### SecureKeyManager
+- 🔐 Fernet encryption for secure storage
+- 💾 SQLite database for persistence
+- 🔄 Environment variable fallback support
+- 🏷️ App-specific storage isolation
+- 📦 Multiple key storage support
+
+### AgentFrameworkWrapper
+- 🤖 Multi-backend support (OpenAI, Anthropic, AutoGen, Magentic One)
+- 🔑 Integrated with SecureKeyManager
+- 💬 Simple chat interface
+- 🔍 Code analysis capabilities
+
+**Integration is simple:** Copy the `reusable/` directory to your project and import!
+
+See [REUSABLE_COMPONENTS.md](REUSABLE_COMPONENTS.md) for detailed integration instructions.
 
 ## Requirements
 - Python 3.7+
