@@ -1,4 +1,6 @@
-# Cisco Meraki API Integration Tool
+# Outset Solutions - Meraki Management Utility
+
+**A professional network management tool by Outset Solutions**
 
 A Python-based tool for interacting with the Cisco Meraki API, featuring:
 - Network topology visualization
@@ -7,6 +9,12 @@ A Python-based tool for interacting with the Cisco Meraki API, featuring:
 - Secure API key management
 - Official Meraki Dashboard API SDK integration
 - **Reusable Components** - API key management and AI agent framework for other applications
+
+## About Outset Solutions
+
+**Outset Solutions** is a professional software development company specializing in network management and automation tools. This Meraki Management Utility is part of our suite of enterprise-grade network administration solutions.
+
+**Company Website:** https://www.outsetsolutions.com
 
 ## 🚀 Reusable Components
 
@@ -200,3 +208,19 @@ scripts/rollback_requirements.ps1 → Rollback workflow
 scripts/sign_requirements.py → Signed artifact generator
 api/dependency_dashboard.py  → JSON emitter for admin panel
 api/dependency_validator.py  → Runtime dependency validator
+
+## About Outset Solutions
+
+**Outset Solutions** is a professional software development company specializing in network management and automation tools. This Meraki Management Utility is part of our suite of enterprise-grade network administration solutions.
+
+### Contact Information
+
+- **Website:** https://www.outsetsolutions.com
+- **Application:** Meraki Management Utility v2.0
+- **Maintained by:** Outset Solutions
+
+### License
+
+This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation.
+
+Original work by Matia Zanella and Keith Ransom. Maintained and enhanced by Outset Solutions.

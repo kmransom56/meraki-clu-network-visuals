@@ -1,6 +1,7 @@
 #**************************************************************************
 #   App:         Meraki Management Utility                                *
 #   Version:     2.0                                                      *
+#   Company:     Outset Solutions                                         *
 #   Author:      Matia Zanella                                            * 
 #   Updated by:  Keith Ransom                                             *
 #   Description: Cisco Meraki CLU (Command Line Utility) is an essential  *
@@ -14,6 +15,9 @@
 #                                                                         *
 #   Github:      https://github.com/kmransom/meraki-clu-network-visuals   *
 #   Copyright (C) 2026 Keith Ransom                                       *
+#                                                                         *
+#   Maintained by: Outset Solutions                                       *
+#   https://www.outsetsolutions.com                                       *
 #                                                                         *
 #   Icon Author:        Cisco Systems, Inc.                               *
 #   Icon Author URL:    https://meraki.cisco.com/                         *
@@ -50,6 +54,7 @@ from base64 import urlsafe_b64encode
 from getpass import getpass
 from api import meraki_api_manager
 from settings import db_creator
+from settings import branding
 from utilities import submenu
 from settings import term_extra
 from modules.meraki.meraki_sdk_wrapper import MerakiSDKWrapper
@@ -275,7 +280,7 @@ def main_menu(fernet):
         elif choice == '12':
             import_env_variables(fernet)
         elif choice == '13':
-            print(colored("\nThank you for using Cisco Meraki CLU!", "green"))
+            print(colored(f"\n{branding.THANK_YOU_MESSAGE}", "green"))
             sys.exit(0)
         else:
             print(colored("\nInvalid choice. Please try again.", "red"))
@@ -352,7 +357,7 @@ def manage_ipinfo_token(fernet):
     term_extra.clear_screen()
     term_extra.print_ascii_art()
     
-    print("\nCisco Meraki CLU - IPinfo Token Management")
+    print("\nOutset Solutions - Meraki Management Utility - IPinfo Token Management")
     print("=" * 50)
     
     try:
@@ -393,7 +398,7 @@ def import_env_variables(fernet):
     term_extra.clear_screen()
     term_extra.print_ascii_art()
     
-    print("\nCisco Meraki CLU - Import Environment Variables")
+    print("\nOutset Solutions - Meraki Management Utility - Import Environment Variables")
     print("=" * 50)
     print("\nThis tool imports environment variables from a file with the format:")
     print(colored("  export KEY_NAME=\"VALUE\"", "cyan"))
@@ -469,7 +474,7 @@ def import_env_variables(fernet):
 
 def initialize_api_key():
     """Initialize and manage the Meraki API key"""
-    parser = argparse.ArgumentParser(description='Cisco Meraki CLU')
+    parser = argparse.ArgumentParser(description='Outset Solutions - Meraki Management Utility')
     parser.add_argument('--set-key', help='Set the Meraki API key')
     args = parser.parse_args()
 
@@ -565,14 +570,13 @@ def test_ssl_connection(fernet):
         print(colored(f"\nTest initialization failed: {str(e)}", "red"))
         logging.error(f"SSL Test Error: {str(e)}\n{traceback.format_exc()}")
     
-    current_year = datetime.now().year
-    footer = f"\033[1mPROJECT PAGE\033[0m\n{current_year} Matia Zanella\nhttps://developer.cisco.com/codeexchange/github/repo/akamura/cisco-meraki-clu/"
+    footer = f"\033[1m{branding.COMPANY_NAME.upper()}\033[0m\n{branding.get_footer()}"
     term_extra.print_footer(footer)
     input(colored("\nPress Enter to return to the main menu...", "green"))
 
 
 def main():
-    """Main function to run the Cisco Meraki CLU"""
+    """Main function to run the Outset Solutions - Meraki Management Utility"""
     try:
         # Check if the database exists
         db_path = os.path.join(os.path.expanduser("~"), ".cisco_meraki_clu.db")
@@ -584,7 +588,7 @@ def main():
         if not os.path.exists(db_path):
             os.system('cls')  # Clears the terminal screen.
             term_extra.print_ascii_art()
-            print(colored("\n\nWelcome to Cisco Meraki Command Line Utility!", "green"))
+            print(colored(f"\n\n{branding.WELCOME_MESSAGE}", "green"))
             print(colored("This program requires a database to store your settings and API keys securely.", "green"))
             create_db = input(colored("\nDo you want to create the database now? (yes/no): ", "cyan")).strip().lower()
             
@@ -621,7 +625,7 @@ def main():
             # Database exists, ask for password
             os.system('cls')  # Clears the terminal screen.
             term_extra.print_ascii_art()
-            db_password = getpass(colored("\n\nWelcome to Cisco Meraki Command Line Utility!\nPlease enter your database password to continue: ", "green"))
+            db_password = getpass(colored(f"\n\n{branding.WELCOME_MESSAGE}\nPlease enter your database password to continue: ", "green"))
             fernet = db_creator.generate_fernet_key(db_password)
             
             # If API key was provided via command line, save it now
